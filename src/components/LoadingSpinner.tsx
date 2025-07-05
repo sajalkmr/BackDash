@@ -1,24 +1,23 @@
 import React from 'react';
 
 interface LoadingSpinnerProps {
-  message?: string;
   size?: 'small' | 'medium' | 'large';
-  className?: string;
+  message?: string;
 }
 
-export function LoadingSpinner({ message, size = 'medium', className = '' }: LoadingSpinnerProps) {
+export function LoadingSpinner({ size = 'medium', message }: LoadingSpinnerProps) {
   const sizeClasses = {
-    small: 'h-4 w-4',
-    medium: 'h-8 w-8',
-    large: 'h-12 w-12'
+    small: 'w-4 h-4',
+    medium: 'w-8 h-8',
+    large: 'w-12 h-12'
   };
 
   return (
-    <div className={`flex items-center justify-center ${className}`}>
-      <div className="text-center">
-        <div className={`animate-spin rounded-full border-b-2 border-blue-500 mx-auto mb-2 ${sizeClasses[size]}`}></div>
-        {message && <div className="text-white text-sm">{message}</div>}
-      </div>
+    <div className="flex flex-col items-center justify-center">
+      <div className={`${sizeClasses[size]} animate-spin rounded-full border-4 border-gray-200 border-t-blue-600`} />
+      {message && (
+        <p className="mt-4 text-gray-600">{message}</p>
+      )}
     </div>
   );
 } 

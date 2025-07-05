@@ -214,3 +214,120 @@ export function clearIndicatorCaches(): void {
   indicatorCache.clear();
   valueCache.clear();
 }
+
+export function calculateIndicator(data: OHLCVData[], type: string, period: number): number[] {
+  switch (type.toLowerCase()) {
+    case 'sma': return calculateSMA(data.map(d => d.close), period);
+    case 'ema': return calculateEMA(data.map(d => d.close), period);
+    case 'rsi': return calculateRSI(data.map(d => d.close), period);
+    case 'macd': return calculateMACD(data.map(d => d.close));
+    case 'bb': return calculateBollingerBands(data.map(d => d.close), period);
+    default: return [];
+  }
+}
+
+function calculateSMA(data: number[], period: number): number[] {
+  const result = new Array(data.length).fill(0);
+  
+  for (let i = period - 1; i < data.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      sum += data[i - j];
+    }
+    result[i] = sum / period;
+  }
+  
+  return result;
+}
+
+function calculateRSI(data: number[], period: number): number[] {
+  const result = new Array(data.length).fill(0);
+  const gains = new Array(data.length).fill(0);
+  const losses = new Array(data.length).fill(0);
+  
+  for (let i = 1; i < data.length; i++) {
+    const change = data[i] - data[i - 1];
+    gains[i] = change > 0 ? change : 0;
+    losses[i] = change < 0 ? -change : 0;
+  }
+  
+  let avgGain = gains.slice(1, period + 1).reduce((a, b) => a + b) / period;
+  let avgLoss = losses.slice(1, period + 1).reduce((a, b) => a + b) / period;
+  
+  result[period] = 100 - (100 / (1 + avgGain / avgLoss));
+  
+  for (let i = period + 1; i < data.length; i++) {
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+    result[i] = 100 - (100 / (1 + avgGain / avgLoss));
+  }
+  
+  return result;
+}
+
+function calculateMACD(data: number[]): number[] {
+  const fastPeriod = 12;
+  const slowPeriod = 26;
+  
+  const fastEMA = calculateEMA(data, fastPeriod);
+  const slowEMA = calculateEMA(data, slowPeriod);
+  
+  const macdLine = new Array(data.length).fill(0);
+  
+  for (let i = 0; i < data.length; i++) {
+    macdLine[i] = fastEMA[i] - slowEMA[i];
+  }
+  
+  return macdLine;
+}
+
+function calculateBollingerBands(data: number[], period: number): number[] {
+  const sma = calculateSMA(data, period);
+  const upperBand = new Array(data.length).fill(0);
+  const lowerBand = new Array(data.length).fill(0);
+  
+  for (let i = period - 1; i < data.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      sum += Math.pow(data[i - j] - sma[i], 2);
+    }
+    const stdDev = Math.sqrt(sum / period);
+    upperBand[i] = sma[i] + (2 * stdDev);
+    lowerBand[i] = sma[i] - (2 * stdDev);
+  }
+  
+  return upperBand;
+}
+
+export const availableIndicators = [
+  {
+    name: 'SMA',
+    type: 'sma',
+    description: 'Simple Moving Average',
+    parameters: ['period']
+  },
+  {
+    name: 'EMA',
+    type: 'ema',
+    description: 'Exponential Moving Average',
+    parameters: ['period']
+  },
+  {
+    name: 'RSI',
+    type: 'rsi',
+    description: 'Relative Strength Index',
+    parameters: ['period']
+  },
+  {
+    name: 'MACD',
+    type: 'macd',
+    description: 'Moving Average Convergence Divergence',
+    parameters: ['fastPeriod', 'slowPeriod', 'signalPeriod']
+  },
+  {
+    name: 'Bollinger Bands',
+    type: 'bb',
+    description: 'Bollinger Bands',
+    parameters: ['period', 'stdDev']
+  }
+];

@@ -1,209 +1,147 @@
-import { OHLCVData, Strategy, Trade, BacktestResult, Condition } from '../types';
-import { getIndicatorValue } from './technicalIndicators';
+import { Strategy, BacktestResult, Trade, OHLCVData } from '../types';
+import { calculateIndicator } from './technicalIndicators';
 
 export function runBacktest(data: OHLCVData[], strategy: Strategy): BacktestResult {
   const trades: Trade[] = [];
-  let currentPosition: 'none' | 'long' | 'short' = 'none';
+  let inPosition = false;
   let entryPrice = 0;
-  let entryTime = 0;
-  let positionSize = strategy.riskManagement.positionSize;
-  let portfolioValue = 10000;
-  const equity: number[] = [portfolioValue];
-  const returns: number[] = [];
+  let entryTime = '';
+  let cash = 100000;
+  let equity = cash;
+  let maxDrawdown = 0;
+  let maxEquity = cash;
+  let equityCurve: number[] = [cash];
+  let drawdownCurve: number[] = [0];
   
-  const stopLossMultiplier = 1 - (strategy.riskManagement.stopLoss / 100);
-  const takeProfitMultiplier = 1 + (strategy.riskManagement.takeProfit / 100);
-  
-  const startIndex = Math.max(50, Math.floor(data.length * 0.1));
-  
-  const maxEquitySize = data.length - startIndex + 1;
-  equity.length = maxEquitySize;
-  let equityIndex = 1;
-  
-  for (let i = startIndex; i < data.length; i++) {
-    const currentData = data[i];
-    const currentPrice = currentData?.close;
+  for (let i = 50; i < data.length; i++) {
+    const currentBar = data[i];
+    const previousBar = data[i - 1];
     
-    if (!currentPrice) continue;
+    const indicators = calculateIndicators(data.slice(0, i + 1), strategy);
+    const entrySignal = evaluateConditions(strategy.entryConditions, indicators, currentBar);
+    const exitSignal = evaluateConditions(strategy.exitConditions, indicators, currentBar);
     
-    if (currentPosition !== 'none') {
-      const shouldExit = checkConditions(data, strategy.exitConditions, i);
+    if (!inPosition && entrySignal) {
+      inPosition = true;
+      entryPrice = currentBar.close;
+      entryTime = currentBar.timestamp;
       
-      let exitTriggered = shouldExit;
+      trades.push({
+        type: 'buy',
+        timestamp: currentBar.timestamp,
+        price: currentBar.close,
+        quantity: calculatePositionSize(cash, currentBar.close, strategy)
+      });
       
-      if (currentPosition === 'long') {
-        if (currentPrice <= entryPrice * stopLossMultiplier || 
-            currentPrice >= entryPrice * takeProfitMultiplier) {
-          exitTriggered = true;
-        }
-      }
+      cash -= trades[trades.length - 1].quantity * currentBar.close;
+    }
+    else if (inPosition && exitSignal) {
+      inPosition = false;
+      const lastTrade = trades[trades.length - 1];
       
-      if (exitTriggered) {
-        const pnl = currentPosition === 'long' 
-          ? (currentPrice - entryPrice) * positionSize
-          : (entryPrice - currentPrice) * positionSize;
-        
-        const pnlPercent = (pnl / (entryPrice * positionSize)) * 100;
-        
-        trades.push({
-          id: `trade_${trades.length + 1}`,
-          entryPrice,
-          exitPrice: currentPrice,
-          entryTime,
-          exitTime: currentData!.timestamp,
-          quantity: positionSize,
-          pnl,
-          pnlPercent,
-          type: currentPosition
-        });
-        
-        portfolioValue += pnl;
-        returns.push(pnlPercent);
-        currentPosition = 'none';
-      }
+      trades.push({
+        type: 'sell',
+        timestamp: currentBar.timestamp,
+        price: currentBar.close,
+        quantity: lastTrade.quantity,
+        pnl: (currentBar.close - entryPrice) * lastTrade.quantity,
+        duration: calculateDuration(entryTime, currentBar.timestamp)
+      });
+      
+      cash += lastTrade.quantity * currentBar.close;
     }
     
-    if (currentPosition === 'none') {
-      const shouldEnter = checkConditions(data, strategy.entryConditions, i);
-      
-      if (shouldEnter) {
-        currentPosition = 'long';
-        entryPrice = currentPrice;
-        entryTime = currentData!.timestamp;
-        positionSize = Math.floor(portfolioValue * 0.95 / currentPrice);
-      }
+    equity = cash + (inPosition ? trades[trades.length - 1].quantity * currentBar.close : 0);
+    equityCurve.push(equity);
+    
+    if (equity > maxEquity) {
+      maxEquity = equity;
     }
     
-    equity[equityIndex++] = portfolioValue;
+    const drawdown = ((maxEquity - equity) / maxEquity) * 100;
+    drawdownCurve.push(drawdown);
+    
+    if (drawdown > maxDrawdown) {
+      maxDrawdown = drawdown;
+    }
   }
   
-  equity.length = equityIndex;
+  const metrics = calculateMetrics(trades, equityCurve, drawdownCurve);
   
-  const metrics = calculateMetrics(trades, returns, equity);
-  const drawdown = calculateDrawdown(equity);
-  
-  const benchmark = data.length > startIndex ? 
-    data.slice(startIndex).map(d => (d.close / data[startIndex]!.close) * portfolioValue) :
-    [];
-
   return {
     trades,
-    metrics: metrics as BacktestResult['metrics'],
-    equity,
-    drawdown,
-    benchmark
+    metrics,
+    equityCurve,
+    drawdownCurve
   };
 }
 
-function checkConditions(data: OHLCVData[], conditions: Condition[], index: number): boolean {
+function calculateIndicators(data: OHLCVData[], strategy: Strategy) {
+  const indicators: { [key: string]: number } = {};
+  
+  for (const indicator of strategy.indicators) {
+    const result = calculateIndicator(data, indicator.type, indicator.period);
+    indicators[`${indicator.type}_${indicator.period}`] = result[result.length - 1];
+  }
+  
+  return indicators;
+}
+
+function evaluateConditions(conditions: any[], indicators: any, currentBar: OHLCVData): boolean {
   return conditions.every(condition => {
-    const indicatorValue = getIndicatorValue(data, condition.indicator, index);
+    const leftValue = resolveValue(condition.left, indicators, currentBar);
+    const rightValue = resolveValue(condition.right, indicators, currentBar);
     
     switch (condition.operator) {
-      case '>':
-        return indicatorValue > condition.value;
-      case '<':
-        return indicatorValue < condition.value;
-      case '>=':
-        return indicatorValue >= condition.value;
-      case '<=':
-        return indicatorValue <= condition.value;
-      case '=':
-        return Math.abs(indicatorValue - condition.value) < 0.01;
-      case '!=':
-        return Math.abs(indicatorValue - condition.value) >= 0.01;
-      default:
-        return false;
+      case '>': return leftValue > rightValue;
+      case '<': return leftValue < rightValue;
+      case '>=': return leftValue >= rightValue;
+      case '<=': return leftValue <= rightValue;
+      case '=': return Math.abs(leftValue - rightValue) < 0.0001;
+      default: return false;
     }
   });
 }
 
-function calculateMetrics(trades: Trade[], returns: number[], equity: number[]) {
-  const totalTrades = trades.length;
-  
-  if (totalTrades === 0) {
-    return {
-      totalPnL: 0,
-      totalPnLPercent: 0,
-      cagr: 0,
-      sharpe: 0,
-      sortino: 0,
-      calmar: 0,
-      maxDrawdown: 0,
-      maxDrawdownPercent: 0,
-      volatility: 0,
-      tradeCount: 0,
-      winRate: 0,
-      avgTradeDuration: 0,
-      largestWin: 0,
-      largestLoss: 0,
-      turnover: 0,
-      var95: 0,
-      leverage: 0,
-      beta: 1.0
-    };
+function resolveValue(operand: any, indicators: any, currentBar: OHLCVData): number {
+  if (typeof operand === 'number') return operand;
+  if (typeof operand === 'string') {
+    if (operand in indicators) return indicators[operand];
+    if (operand in currentBar) return currentBar[operand];
+    return parseFloat(operand);
   }
-  
-  const winningTrades = trades.filter(t => t.pnl > 0);
-  const losingTrades = trades.filter(t => t.pnl < 0);
-  
-  const totalPnL = trades.reduce((sum, t) => sum + t.pnl, 0);
-  const totalPnLPercent = (totalPnL / 10000) * 100;
-  
-  const avgReturn = returns.length > 0 ? returns.reduce((sum, r) => sum + r, 0) / returns.length : 0;
-  const returnVariance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
-  const returnStd = Math.sqrt(returnVariance);
-  
-  const sharpe = returnStd > 0 ? (avgReturn / returnStd) * Math.sqrt(252) : 0;
-  
-  const downside = returns.filter(r => r < 0);
-  const downsideVariance = downside.length > 0 ? 
-    downside.reduce((sum, r) => sum + Math.pow(r, 2), 0) / downside.length : 0;
-  const downsideStd = Math.sqrt(downsideVariance);
-  const sortino = downsideStd > 0 ? (avgReturn / downsideStd) * Math.sqrt(252) : 0;
-  
-  const maxEquity = Math.max(...equity);
-  const maxEquityIndex = equity.indexOf(maxEquity);
-  const minEquityAfterMax = Math.min(...equity.slice(maxEquityIndex));
-  const maxDrawdown = maxEquity - minEquityAfterMax;
-  const maxDrawdownPercent = (maxDrawdown / maxEquity) * 100;
-  
-  const timePeriod = equity.length > 1 ? (equity.length - 1) / 252 : 1;
-  const cagr = timePeriod > 0 ? Math.pow(equity[equity.length - 1]! / equity[0]!, 1 / timePeriod) - 1 : 0;
-  const calmar = maxDrawdownPercent > 0 ? cagr * 100 / maxDrawdownPercent : 0;
-  
-  return {
-    totalPnL,
-    totalPnLPercent,
-    cagr: cagr * 100,
-    sharpe,
-    sortino,
-    calmar,
-    maxDrawdown,
-    maxDrawdownPercent,
-    volatility: returnStd * Math.sqrt(252),
-    tradeCount: totalTrades,
-    winRate: (winningTrades.length / totalTrades) * 100,
-    avgTradeDuration: trades.reduce((sum, t) => sum + (t.exitTime - t.entryTime), 0) / totalTrades / (1000 * 60 * 60 * 24),
-    largestWin: winningTrades.length > 0 ? Math.max(...winningTrades.map(t => t.pnlPercent)) : 0,
-    largestLoss: losingTrades.length > 0 ? Math.min(...losingTrades.map(t => t.pnlPercent)) : 0,
-    turnover: 100,
-    var95: returns.length > 0 ? returns.sort((a, b) => a - b)[Math.floor(returns.length * 0.05)] : 0,
-    leverage: 95,
-    beta: 1.0
-  };
+  return 0;
 }
 
-function calculateDrawdown(equity: number[]): number[] {
-  const drawdown: number[] = [];
-  let peak = equity[0];
+function calculatePositionSize(cash: number, price: number, strategy: Strategy): number {
+  const riskAmount = cash * (strategy.riskManagement.positionSize / 100);
+  return riskAmount / price;
+}
+
+function calculateDuration(entryTime: string, exitTime: string): number {
+  return Math.round((new Date(exitTime).getTime() - new Date(entryTime).getTime()) / (1000 * 60));
+}
+
+function calculateMetrics(trades: Trade[], equityCurve: number[], drawdownCurve: number[]) {
+  const winningTrades = trades.filter(t => t.type === 'sell' && t.pnl && t.pnl > 0);
+  const losingTrades = trades.filter(t => t.type === 'sell' && t.pnl && t.pnl <= 0);
   
-  for (const value of equity) {
-    if (value! > peak!) {
-      peak = value!;
-    }
-    drawdown.push(((peak! - value!) / peak!) * 100);
-  }
+  const totalReturn = ((equityCurve[equityCurve.length - 1] - equityCurve[0]) / equityCurve[0]) * 100;
+  const maxDrawdown = Math.max(...drawdownCurve);
+  const winRate = (winningTrades.length / (winningTrades.length + losingTrades.length)) * 100;
   
-  return drawdown;
+  const avgWinPnl = winningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) / winningTrades.length;
+  const avgLossPnl = losingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) / losingTrades.length;
+  
+  return {
+    totalReturn,
+    maxDrawdown,
+    winRate,
+    totalTrades: winningTrades.length + losingTrades.length,
+    winningTrades: winningTrades.length,
+    losingTrades: losingTrades.length,
+    avgWinPnl,
+    avgLossPnl,
+    profitFactor: Math.abs(avgWinPnl / avgLossPnl)
+  };
 }
