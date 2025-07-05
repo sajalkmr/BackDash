@@ -28,3 +28,9 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Large data files
+*.csv
+!sample_data.csv
+public/dow_jones_data.csv
+src/data/dow_jones_data.csv
