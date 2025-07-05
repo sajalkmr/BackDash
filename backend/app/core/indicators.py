@@ -1,6 +1,5 @@
 """
 Technical Indicators Library - Comprehensive indicator calculations
-Strategic integration from multiple projects with enhanced functionality
 """
 
 import pandas as pd
@@ -308,8 +307,6 @@ class TechnicalIndicators:
         
         return results
 
-
-# Legacy function for backward compatibility
 def calculate_indicator(
     market_data: pd.DataFrame,
     indicator_type: str,

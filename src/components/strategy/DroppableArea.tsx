@@ -14,7 +14,7 @@ export function DroppableArea({ id, children }: DroppableAreaProps) {
   const style: React.CSSProperties = {
     transition: 'background-color 0.2s ease',
     backgroundColor: isOver ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-    minHeight: '100px', // Ensure area is large enough to be dropped on
+    minHeight: '100px',
   };
 
   return (

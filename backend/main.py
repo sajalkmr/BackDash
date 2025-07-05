@@ -10,7 +10,7 @@ import os
 import asyncio
 from datetime import datetime
 
-from app.api.routes import strategy, data, analytics
+from app.api.routes import strategy, data, analytics, websocket
 
 # Create FastAPI application with comprehensive configuration
 app = FastAPI(
@@ -40,6 +40,7 @@ app.add_middleware(
 app.include_router(strategy.router, prefix="/api/v1/strategy", tags=["strategy"])
 app.include_router(data.router, prefix="/api/v1/data", tags=["data"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
+app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 
 # Static files serving (for future use)
 # app.mount("/static", StaticFiles(directory="static"), name="static")

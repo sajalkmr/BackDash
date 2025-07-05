@@ -46,29 +46,69 @@ export interface Trade {
   type: 'long' | 'short';
 }
 
-export interface BacktestResult {
-  trades: Trade[];
-  metrics: {
-    totalPnL: number;
-    totalPnLPercent: number;
-    cagr: number;
-    sharpe: number;
-    sortino: number;
-    calmar: number;
-    maxDrawdown: number;
-    maxDrawdownPercent: number;
-    volatility: number;
-    tradeCount: number;
-    winRate: number;
-    avgTradeDuration: number;
-    largestWin: number;
-    largestLoss: number;
-    turnover: number;
-    var95: number;
-    leverage: number;
-    beta: number;
+export interface StrategyBuilderProps {
+  onStrategyStart: (strategyId: string) => void;
+  onBacktestStart: (backtestId: string) => void;
+}
+
+export interface EquityChartProps {
+  data?: Array<{
+    timestamp: string;
+    portfolio_value: number;
+    total_return_pct: number;
+  }>;
+}
+
+export interface PerformanceMetricsProps {
+  data?: {
+    total_return_pct: number;
+    annual_return_pct: number;
+    sharpe_ratio: number;
+    sortino_ratio: number;
+    calmar_ratio: number;
+    volatility_annual: number;
+    downside_deviation: number;
   };
-  equity: number[];
-  drawdown: number[];
-  benchmark: number[];
+}
+
+export interface BenchmarkComparisonProps {
+  data?: {
+    strategy_return_pct: number;
+    benchmark_return_pct: number;
+    alpha: number;
+    beta: number;
+    correlation: number;
+  };
+}
+
+export interface RiskVisualsProps {
+  data?: {
+    max_drawdown_pct: number;
+    var95: number;
+    cvar95: number;
+    recovery_factor: number;
+    time_underwater_pct: number;
+  };
+}
+
+export interface TradesListProps {
+  trades?: Array<{
+    timestamp: string;
+    type: 'buy' | 'sell';
+    price: number;
+    quantity: number;
+    pnl?: number;
+    return_pct?: number;
+    duration_minutes?: number;
+  }>;
+}
+
+export interface BacktestResult {
+  trades: TradesListProps['trades'];
+  metrics: {
+    performance: PerformanceMetricsProps['data'];
+    risk: RiskVisualsProps['data'];
+    benchmark: BenchmarkComparisonProps['data'];
+  };
+  equity_curve: EquityChartProps['data'];
 }
