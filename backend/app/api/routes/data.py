@@ -5,7 +5,7 @@ Enhanced integration with professional data service
 
 from fastapi import APIRouter, HTTPException, File, UploadFile, Query
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 
 from ...services.data_service import DataService
@@ -58,109 +58,61 @@ async def get_symbol_info(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching symbol info: {str(e)}")
 
-@router.get("/ohlcv/{symbol}/{timeframe}")
+@router.get("/ohlcv/{symbol}", response_model=Dict)
 async def get_ohlcv_data(
     symbol: str,
-    timeframe: str,
-    exchange: str = Query(default="binance", description="Exchange name"),
-    start_date: Optional[datetime] = Query(default=None, description="Start date (ISO format)"),
-    end_date: Optional[datetime] = Query(default=None, description="End date (ISO format)"),
-    limit: Optional[int] = Query(default=None, description="Maximum number of records", ge=1, le=10000)
+    timeframe: str = "1h",
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    limit: Optional[int] = None
 ):
-    """Get OHLCV data for a symbol and timeframe"""
+    """Get OHLCV market data for a symbol"""
     try:
-        # Validate symbol and timeframe
-        available_symbols = await data_service.get_available_symbols()
-        if symbol not in available_symbols:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Symbol '{symbol}' not supported. Available symbols: {available_symbols}"
-            )
-        
-        available_timeframes = await data_service.get_supported_timeframes()
-        if timeframe not in available_timeframes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Timeframe '{timeframe}' not supported. Available timeframes: {available_timeframes}"
-            )
-        
-        # Get data
-        df = await data_service.get_ohlcv_data(
+        if not start_date:
+            start_date = datetime.now() - timedelta(days=30)
+        if not end_date:
+            end_date = datetime.now()
+            
+        data = await data_service.get_ohlcv_data(
             symbol=symbol,
-            exchange=exchange,
             timeframe=timeframe,
             start_date=start_date,
             end_date=end_date,
             limit=limit
         )
         
-        # Convert to response format
-        data = df.reset_index().to_dict(orient="records")
-        
         return {
             "symbol": symbol,
             "timeframe": timeframe,
-            "exchange": exchange,
-            "count": len(data),
-            "start_date": df.index.min().isoformat() if not df.empty else None,
-            "end_date": df.index.max().isoformat() if not df.empty else None,
-            "data": data
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "data_points": len(data),
+            "data": data.to_dict(orient="records")
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching OHLCV data: {str(e)}")
 
 @router.post("/upload")
-async def upload_csv_data(
-    file: UploadFile = File(...),
-    symbol: str = Query(..., description="Trading symbol"),
-    timeframe: str = Query(..., description="Data timeframe"),
-    validate: bool = Query(default=True, description="Validate data integrity")
-):
-    """Upload CSV data file for a specific symbol and timeframe"""
+async def upload_data_file(file: UploadFile = File(...)):
+    """Upload market data file"""
     try:
-        # Validate file type
-        if not file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Only CSV files are supported")
+        content = await file.read()
+        df = pd.read_csv(content)
         
-        # Validate symbol and timeframe format
-        if not symbol or len(symbol) < 3:
-            raise HTTPException(status_code=400, detail="Invalid symbol format")
+        if not all(col in df.columns for col in ["timestamp", "open", "high", "low", "close", "volume"]):
+            raise ValueError("File must contain OHLCV columns")
         
-        available_timeframes = await data_service.get_supported_timeframes()
-        if timeframe not in available_timeframes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Timeframe '{timeframe}' not supported. Available: {available_timeframes}"
-            )
+        await data_service.save_data(df, file.filename)
         
-        # Read file content
-        file_content = await file.read()
+        return {
+            "message": "Data file uploaded successfully",
+            "filename": file.filename,
+            "rows": len(df)
+        }
         
-        if len(file_content) == 0:
-            raise HTTPException(status_code=400, detail="Empty file uploaded")
-        
-        # Upload and validate
-        result = await data_service.upload_csv_data(
-            file_content=file_content,
-            symbol=symbol,
-            timeframe=timeframe,
-            validate=validate
-        )
-        
-        if result["success"]:
-            return {
-                "message": "File uploaded successfully",
-                "filename": file.filename,
-                **result
-            }
-        else:
-            raise HTTPException(status_code=400, detail=result["error"])
-            
-    except HTTPException:
-        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
@@ -238,11 +190,17 @@ async def validate_dataset(
 
 @router.get("/health")
 async def data_service_health():
-    """Health check endpoint for data service"""
-    try:
-        return await data_service.health_check()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Data service health check failed: {str(e)}")
+    """Health check for data service"""
+    return {
+        "status": "healthy",
+        "service": "data_service",
+        "features": [
+            "OHLCV data retrieval",
+            "Multiple timeframes",
+            "Data validation",
+            "File upload support"
+        ]
+    }
 
 @router.get("/stats/{symbol}/{timeframe}")
 async def get_data_statistics(

@@ -1,35 +1,15 @@
 """
-API Routes Package - Main router configuration
-Strategic integration of all API endpoints
+BackDash - API Package
+Enhanced API routes with comprehensive functionality
 """
 
 from fastapi import APIRouter
-from .routes import data, strategy, backtest, analytics
+from .routes import strategy, data, analytics
 
-# Create main API router
+# Create main router
 router = APIRouter()
 
-# Include all route modules with proper prefixes and tags
-router.include_router(
-    data.router, 
-    prefix="/data", 
-    tags=["data"]
-)
-
-router.include_router(
-    strategy.router, 
-    prefix="/strategy", 
-    tags=["strategy"]
-)
-
-router.include_router(
-    backtest.router, 
-    prefix="/backtest", 
-    tags=["backtest"]
-)
-
-router.include_router(
-    analytics.router, 
-    prefix="/analytics", 
-    tags=["analytics"]
-) 
+# Include sub-routers
+router.include_router(strategy.router, prefix="/strategy", tags=["strategy"])
+router.include_router(data.router, prefix="/data", tags=["data"])
+router.include_router(analytics.router, prefix="/analytics", tags=["analytics"]) 

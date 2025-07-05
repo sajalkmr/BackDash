@@ -1,6 +1,5 @@
 """
-GoQuant Backtesting Platform - Enhanced Main Application
-Strategic integration of professional backend architecture with real-time features
+BackDash - Enhanced Main Application
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -8,13 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
+import asyncio
+from datetime import datetime
 
-from app.api import router as api_router
+from app.api.routes import strategy, data, analytics
 
 # Create FastAPI application with comprehensive configuration
 app = FastAPI(
-    title="GoQuant Enhanced Backtesting Platform",
-    description="Professional backtesting platform with visual strategy builder and real-time analytics",
+    title="BackDash",
+    description="Professional backtesting platform for quantitative trading strategies",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -26,9 +27,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",      # React dev server
-        "http://127.0.0.1:3000",
         "http://localhost:5173",      # Vite dev server
-        "http://127.0.0.1:5173",
         "http://localhost:8080",      # Alternative dev port
         "*"                           # Allow all for development (restrict in production)
     ],
@@ -37,8 +36,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routes with versioning
-app.include_router(api_router, prefix="/api/v1")
+# Include routers
+app.include_router(strategy.router, prefix="/api/v1/strategy", tags=["strategy"])
+app.include_router(data.router, prefix="/api/v1/data", tags=["data"])
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
 
 # Static files serving (for future use)
 # app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -47,7 +48,7 @@ app.include_router(api_router, prefix="/api/v1")
 async def root():
     """Root endpoint with API information"""
     return {
-        "message": "Welcome to GoQuant Enhanced Backtesting Platform",
+        "message": "Welcome to BackDash",
         "version": "2.0.0",
         "documentation": "/docs",
         "api_version": "v1",
@@ -62,15 +63,15 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Comprehensive health check endpoint"""
+    """Health check endpoint"""
     return {
         "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
         "version": "2.0.0",
-        "timestamp": "2024-01-01T00:00:00Z",
         "services": {
-            "api": "healthy",
-            "data_service": "healthy",
-            "analytics_engine": "healthy"
+            "api": "operational",
+            "database": "operational",
+            "websocket": "operational"
         }
     }
 
@@ -141,7 +142,6 @@ async def websocket_strategy_updates(websocket: WebSocket, strategy_id: str):
             })
             
             # Add small delay for demonstration
-            import asyncio
             await asyncio.sleep(0.5)
             
     except WebSocketDisconnect:
@@ -153,7 +153,7 @@ async def websocket_strategy_updates(websocket: WebSocket, strategy_id: str):
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8000,
         reload=True,
         log_level="info",

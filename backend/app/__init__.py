@@ -1,8 +1,7 @@
 """
-GoQuant Enhanced Backtesting Platform - App Package
-Professional backend application structure
+BackDash - App Package
 """
 
 __version__ = "2.0.0"
-__author__ = "GoQuant Team"
-__description__ = "Enhanced backtesting platform with visual strategy builder" 
+__author__ = "BackDash Team"
+__description__ = "Professional backtesting platform for quantitative trading strategies" 

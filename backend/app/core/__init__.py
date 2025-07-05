@@ -1,12 +1,14 @@
 """
 Core Package - Strategy engines and analytics
-Future implementation for Phase 2 and beyond
+Phase 2 Implementation: Advanced Strategy Engine & Technical Indicators
 """
 
-# Placeholder for future core components:
-# - strategy_engine.py
-# - backtest_engine.py  
-# - analytics_engine.py
-# - indicators.py
+from .strategy_engine import StrategyEngine
+from .backtest_engine import BacktestEngine
+from .indicators import TechnicalIndicators
 
-__all__ = [] 
+__all__ = [
+    "StrategyEngine",
+    "BacktestEngine", 
+    "TechnicalIndicators"
+] 
