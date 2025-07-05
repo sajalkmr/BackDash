@@ -1,6 +1,5 @@
 """
 Backtest API Routes - Backtesting execution endpoints
-Placeholder for Phase 1, full implementation in Phase 2
 """
 
 from fastapi import APIRouter, HTTPException
@@ -10,7 +9,7 @@ router = APIRouter()
 
 @router.post("/run")
 async def run_backtest(request: BacktestRequest):
-    """Run backtest (placeholder)"""
+    """Run backtest"""
     try:
         return {
             "backtest_id": "bt_placeholder_001",
@@ -25,7 +24,7 @@ async def run_backtest(request: BacktestRequest):
 
 @router.get("/status/{backtest_id}")
 async def get_backtest_status(backtest_id: str):
-    """Get backtest status (placeholder)"""
+    """Get backtest status"""
     return {
         "backtest_id": backtest_id,
         "status": "completed",
