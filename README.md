@@ -1,41 +1,26 @@
-# GoQuant Backtesting Platform
+# BackDash
 
-A modern backtesting platform for quantitative trading strategies, built with React, FastAPI, and TypeScript.
+A modern backtesting platform for quantitative trading strategies with visual strategy builder and comprehensive analytics.
 
 ## Features
 
-- **Interactive Strategy Builder**: Drag-and-drop interface for building trading strategies
-- **Real-time Backtesting**: Fast backtesting engine with instant feedback
-- **Advanced Analytics**:
-  - Equity curves and drawdown analysis
-  - Performance metrics (Sharpe, Sortino, etc.)
-  - Trade list and statistics
-  - Risk analytics and visualizations
-  - Benchmark comparison
-- **Technical Indicators**: EMA, RSI, MACD, and more
-- **Data Management**: Support for both real and mock market data
+- **Visual Strategy Builder**: Drag-and-drop interface for building trading strategies
+- **Technical Indicators**: 9 indicators including SMA, EMA, RSI, MACD, Bollinger Bands, and more
+- **Advanced Backtesting**: Event-driven engine with realistic market simulation
+- **Real-time Analytics**: Performance metrics, equity curves, and risk analysis
+- **Multiple Assets**: Support for major cryptocurrency pairs
 
 ## Tech Stack
 
-### Frontend
-- React 18 with TypeScript
-- Vite for build tooling
-- TailwindCSS for styling
-- React DnD for drag-and-drop
-- Lightweight charting libraries
-
-### Backend
-- FastAPI (Python)
-- Pandas for data processing
-- NumPy for calculations
-- SQLite for data storage
+- **Frontend**: React 18, TypeScript, Vite, TailwindCSS
+- **Backend**: FastAPI (Python), Pandas, NumPy
+- **API**: RESTful endpoints with comprehensive documentation
 
 ## Getting Started
 
 ### Prerequisites
 - Node.js 18+
 - Python 3.12+
-- pip
 
 ### Installation
 
@@ -50,64 +35,49 @@ cd BackDash
 npm install
 ```
 
-3. Set up Python virtual environment and install backend dependencies:
+3. Set up backend:
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Data Setup
-The application requires market data in CSV format. Due to file size limitations, data files are not included in the repository.
-
-1. Download the sample data:
-   - For testing, use the mock data provided in `src/data/mockData.ts`
-   - For real data, place your CSV files in:
-     - `public/dow_jones_data.csv` (for static serving)
-     - `src/data/dow_jones_data.csv` (for direct import)
-
 ### Running the Application
 
-1. Start the backend server:
+1. Start backend:
 ```bash
 cd backend
-uvicorn main:app --reload
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-2. Start the frontend development server:
+2. Start frontend:
 ```bash
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173`
+3. Access:
+- Frontend: `http://localhost:5173`
+- API Docs: `http://127.0.0.1:8000/docs`
 
 ## Project Structure
 
 ```
-├── backend/                 # FastAPI backend
-│   ├── app/
-│   │   ├── api/            # API routes
-│   │   ├── models/         # Data models
-│   │   └── services/       # Business logic
-│   └── data/               # Market data
-├── src/                    # React frontend
-│   ├── components/         # React components
-│   │   ├── analytics/      # Analytics components
-│   │   └── strategy/       # Strategy builder components
-│   ├── data/              # Data loaders
-│   ├── types/             # TypeScript types
-│   └── utils/             # Utility functions
+├── backend/          # FastAPI backend
+│   ├── app/         # Application code
+│   └── data/        # Market data
+├── src/             # React frontend
+│   ├── components/  # UI components
+│   └── utils/       # Utilities
+└── public/          # Static assets
 ```
 
-## Contributing
+## API Endpoints
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- `/api/v1/strategy/*` - Strategy management and validation
+- `/api/v1/data/*` - Market data endpoints
+- `/api/v1/analytics/*` - Performance analytics
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License
