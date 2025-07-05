@@ -41,8 +41,8 @@ A modern backtesting platform for quantitative trading strategies, built with Re
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/goquant-backtesting-platform.git
-cd goquant-backtesting-platform
+git clone https://github.com/sajalkmr/BackDash.git
+cd BackDash
 ```
 
 2. Install frontend dependencies:
@@ -57,6 +57,15 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+### Data Setup
+The application requires market data in CSV format. Due to file size limitations, data files are not included in the repository.
+
+1. Download the sample data:
+   - For testing, use the mock data provided in `src/data/mockData.ts`
+   - For real data, place your CSV files in:
+     - `public/dow_jones_data.csv` (for static serving)
+     - `src/data/dow_jones_data.csv` (for direct import)
 
 ### Running the Application
 
