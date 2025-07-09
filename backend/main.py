@@ -11,27 +11,24 @@ import asyncio
 from datetime import datetime
 
 from app.api.routes import strategy, data, analytics, websocket
+from app.config import settings
 
-# Create FastAPI application with comprehensive configuration
+# Create FastAPI application with configuration-based settings
 app = FastAPI(
-    title="BackDash",
-    description="Professional backtesting platform for quantitative trading strategies",
-    version="2.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/api/v1/openapi.json"
+    title=settings.app_name,
+    description=settings.app_description,
+    version=settings.app_version,
+    docs_url=settings.docs_url,
+    redoc_url=settings.redoc_url,
+    openapi_url=settings.openapi_url,
+    debug=settings.debug
 )
 
-# Configure CORS for multiple frontend ports and environments
+# Configure CORS using configuration settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",      # React dev server
-        "http://localhost:5173",      # Vite dev server
-        "http://localhost:8080",      # Alternative dev port
-        "*"                           # Allow all for development (restrict in production)
-    ],
-    allow_credentials=True,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -49,10 +46,11 @@ app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 async def root():
     """Root endpoint with API information"""
     return {
-        "message": "Welcome to BackDash",
-        "version": "2.0.0",
-        "documentation": "/docs",
+        "message": f"Welcome to {settings.app_name}",
+        "version": settings.app_version,
+        "documentation": settings.docs_url,
         "api_version": "v1",
+        "environment": "production" if settings.is_production else "development",
         "features": [
             "Visual Strategy Builder",
             "Real-time Backtesting",
@@ -68,10 +66,12 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.0.0",
+        "version": settings.app_version,
+        "environment": "production" if settings.is_production else "development",
+        "debug_mode": settings.debug,
         "services": {
             "api": "operational",
-            "database": "operational",
+            "database": "operational" if settings.database_url else "not_configured",
             "websocket": "operational"
         }
     }
@@ -154,9 +154,9 @@ async def websocket_strategy_updates(websocket: WebSocket, strategy_id: str):
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="127.0.0.1",
-        port=8000,
-        reload=True,
-        log_level="info",
-        reload_dirs=["app"]
+        host=settings.host,
+        port=settings.port,
+        reload=settings.reload and not settings.is_production,
+        log_level=settings.log_level,
+        reload_dirs=["app"] if settings.reload else None
     ) 

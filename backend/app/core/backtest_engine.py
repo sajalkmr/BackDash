@@ -477,8 +477,19 @@ class BacktestEngine:
             rolling_max = portfolio_df['portfolio_value'].cummax()
             drawdown = (portfolio_df['portfolio_value'] - rolling_max) / rolling_max * 100
             max_drawdown_pct = drawdown.min()
+            
+            # Calculate detailed drawdown metrics
+            drawdown_metrics = self._calculate_detailed_drawdown_metrics(portfolio_df, drawdown)
         else:
             max_drawdown_pct = 0
+            drawdown_metrics = {
+                'max_drawdown_duration_days': 0,
+                'avg_drawdown_pct': 0,
+                'avg_drawdown_duration_days': 0,
+                'drawdown_periods': 0,
+                'time_underwater_pct': 0,
+                'max_time_to_recovery_days': 0
+            }
         
         calmar_ratio = (annual_return_pct / abs(max_drawdown_pct)) if max_drawdown_pct != 0 else 0
         
@@ -497,6 +508,12 @@ class BacktestEngine:
         avg_trade_return_pct = np.mean([t.return_pct for t in completed_trades if t.return_pct]) if completed_trades else 0
         avg_win_return_pct = np.mean([t.return_pct for t in winning_trades if t.return_pct]) if winning_trades else 0
         avg_loss_return_pct = np.mean([t.return_pct for t in losing_trades if t.return_pct]) if losing_trades else 0
+        
+        # Calculate trade duration metrics
+        trade_duration_metrics = self._calculate_trade_duration_metrics(completed_trades, winning_trades, losing_trades)
+        
+        # Calculate consecutive wins/losses
+        consecutive_metrics = self._calculate_consecutive_metrics(completed_trades)
         
         # Create result
         return BacktestResult(
@@ -523,13 +540,13 @@ class BacktestEngine:
             ),
             drawdown_metrics=DrawdownMetrics(
                 max_drawdown_pct=max_drawdown_pct,
-                max_drawdown_duration_days=0,  # TODO: Calculate properly
-                avg_drawdown_pct=0,  # TODO: Calculate properly
-                avg_drawdown_duration_days=0,  # TODO: Calculate properly
-                drawdown_periods=0,  # TODO: Calculate properly
+                max_drawdown_duration_days=drawdown_metrics['max_drawdown_duration_days'],
+                avg_drawdown_pct=drawdown_metrics['avg_drawdown_pct'],
+                avg_drawdown_duration_days=drawdown_metrics['avg_drawdown_duration_days'],
+                drawdown_periods=drawdown_metrics['drawdown_periods'],
                 recovery_factor=abs(total_return_pct / max_drawdown_pct) if max_drawdown_pct != 0 else 0,
-                time_underwater_pct=0,  # TODO: Calculate properly
-                max_time_to_recovery_days=0  # TODO: Calculate properly
+                time_underwater_pct=drawdown_metrics['time_underwater_pct'],
+                max_time_to_recovery_days=drawdown_metrics['max_time_to_recovery_days']
             ),
             trading_metrics=TradingMetrics(
                 total_trades=total_trades,
@@ -540,13 +557,13 @@ class BacktestEngine:
                 avg_trade_return_pct=avg_trade_return_pct,
                 avg_win_return_pct=avg_win_return_pct,
                 avg_loss_return_pct=avg_loss_return_pct,
-                avg_trade_duration_hours=0,  # TODO: Calculate properly
-                avg_win_duration_hours=0,  # TODO: Calculate properly
-                avg_loss_duration_hours=0,  # TODO: Calculate properly
+                avg_trade_duration_hours=trade_duration_metrics['avg_trade_duration_hours'],
+                avg_win_duration_hours=trade_duration_metrics['avg_win_duration_hours'],
+                avg_loss_duration_hours=trade_duration_metrics['avg_loss_duration_hours'],
                 best_trade_return_pct=max([t.return_pct for t in completed_trades if t.return_pct], default=0),
                 worst_trade_return_pct=min([t.return_pct for t in completed_trades if t.return_pct], default=0),
-                max_consecutive_wins=0,  # TODO: Calculate properly
-                max_consecutive_losses=0  # TODO: Calculate properly
+                max_consecutive_wins=consecutive_metrics['max_consecutive_wins'],
+                max_consecutive_losses=consecutive_metrics['max_consecutive_losses']
             ),
             trades=portfolio.trade_history,
             status="completed",
@@ -559,4 +576,136 @@ class BacktestEngine:
                 }
                 for snapshot in portfolio.portfolio_history
             ]
-        ) 
+        )
+    
+    def _calculate_detailed_drawdown_metrics(self, portfolio_df: pd.DataFrame, drawdown: pd.Series) -> Dict:
+        """Calculate detailed drawdown metrics"""
+        # Find drawdown periods (when drawdown < 0)
+        underwater = drawdown < 0
+        
+        # Get periods where portfolio is underwater
+        underwater_periods = []
+        start_idx = None
+        
+        for i, is_underwater in enumerate(underwater):
+            if is_underwater and start_idx is None:
+                start_idx = i
+            elif not is_underwater and start_idx is not None:
+                underwater_periods.append((start_idx, i-1))
+                start_idx = None
+        
+        # Handle case where last period is underwater
+        if start_idx is not None:
+            underwater_periods.append((start_idx, len(underwater)-1))
+        
+        if not underwater_periods:
+            return {
+                'max_drawdown_duration_days': 0,
+                'avg_drawdown_pct': 0,
+                'avg_drawdown_duration_days': 0,
+                'drawdown_periods': 0,
+                'time_underwater_pct': 0,
+                'max_time_to_recovery_days': 0
+            }
+        
+        # Calculate metrics for each drawdown period
+        drawdown_durations = []
+        drawdown_magnitudes = []
+        recovery_times = []
+        
+        for start, end in underwater_periods:
+            # Duration in days
+            start_time = portfolio_df.index[start]
+            end_time = portfolio_df.index[end]
+            duration_days = (end_time - start_time).days
+            drawdown_durations.append(duration_days)
+            
+            # Magnitude (minimum drawdown in this period)
+            period_drawdown = drawdown.iloc[start:end+1]
+            drawdown_magnitudes.append(period_drawdown.min())
+            
+            # Recovery time (simplified - time from end of drawdown to next high)
+            if end < len(portfolio_df) - 1:
+                recovery_start = end
+                portfolio_values = portfolio_df['portfolio_value'].iloc[recovery_start:]
+                peak_value = portfolio_df['portfolio_value'].iloc[start-1] if start > 0 else portfolio_df['portfolio_value'].iloc[0]
+                
+                recovery_idx = None
+                for j, value in enumerate(portfolio_values):
+                    if value >= peak_value:
+                        recovery_idx = j
+                        break
+                
+                if recovery_idx is not None:
+                    recovery_time = portfolio_df.index[recovery_start + recovery_idx]
+                    recovery_duration = (recovery_time - end_time).days
+                    recovery_times.append(recovery_duration)
+        
+        # Calculate summary statistics
+        max_drawdown_duration_days = max(drawdown_durations) if drawdown_durations else 0
+        avg_drawdown_duration_days = np.mean(drawdown_durations) if drawdown_durations else 0
+        avg_drawdown_pct = np.mean(drawdown_magnitudes) if drawdown_magnitudes else 0
+        
+        # Time underwater percentage
+        total_underwater_periods = sum(drawdown_durations)
+        total_periods = len(portfolio_df)
+        time_underwater_pct = (total_underwater_periods / total_periods * 100) if total_periods > 0 else 0
+        
+        # Max time to recovery
+        max_time_to_recovery_days = max(recovery_times) if recovery_times else 0
+        
+        return {
+            'max_drawdown_duration_days': max_drawdown_duration_days,
+            'avg_drawdown_pct': avg_drawdown_pct,
+            'avg_drawdown_duration_days': avg_drawdown_duration_days,
+            'drawdown_periods': len(underwater_periods),
+            'time_underwater_pct': time_underwater_pct,
+            'max_time_to_recovery_days': max_time_to_recovery_days
+        }
+    
+    def _calculate_trade_duration_metrics(self, completed_trades: list, winning_trades: list, losing_trades: list) -> Dict:
+        """Calculate trade duration metrics"""
+        def get_duration_hours(trades):
+            durations = []
+            for trade in trades:
+                if trade.duration_minutes is not None:
+                    durations.append(trade.duration_minutes / 60.0)  # Convert to hours
+            return durations
+        
+        all_durations = get_duration_hours(completed_trades)
+        win_durations = get_duration_hours(winning_trades)
+        loss_durations = get_duration_hours(losing_trades)
+        
+        return {
+            'avg_trade_duration_hours': np.mean(all_durations) if all_durations else 0,
+            'avg_win_duration_hours': np.mean(win_durations) if win_durations else 0,
+            'avg_loss_duration_hours': np.mean(loss_durations) if loss_durations else 0
+        }
+    
+    def _calculate_consecutive_metrics(self, completed_trades: list) -> Dict:
+        """Calculate consecutive wins and losses"""
+        if not completed_trades:
+            return {'max_consecutive_wins': 0, 'max_consecutive_losses': 0}
+        
+        # Sort trades by entry time to ensure chronological order
+        sorted_trades = sorted(completed_trades, key=lambda t: t.entry_time)
+        
+        max_consecutive_wins = 0
+        max_consecutive_losses = 0
+        current_consecutive_wins = 0
+        current_consecutive_losses = 0
+        
+        for trade in sorted_trades:
+            if trade.net_pnl and trade.net_pnl > 0:  # Winning trade
+                current_consecutive_wins += 1
+                current_consecutive_losses = 0
+                max_consecutive_wins = max(max_consecutive_wins, current_consecutive_wins)
+            elif trade.net_pnl and trade.net_pnl <= 0:  # Losing trade
+                current_consecutive_losses += 1
+                current_consecutive_wins = 0
+                max_consecutive_losses = max(max_consecutive_losses, current_consecutive_losses)
+        
+        return {
+            'max_consecutive_wins': max_consecutive_wins,
+            'max_consecutive_losses': max_consecutive_losses
+        } 
