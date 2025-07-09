@@ -3,11 +3,12 @@ Enhanced Strategy API Routes - Full Phase 2 implementation
 Strategic integration of advanced strategy engine and backtesting capabilities
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, status
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import asyncio
 import pandas as pd
+from sqlalchemy.orm import Session
 
 from ...models.strategy import Strategy
 from ...models.backtest import BacktestRequest, BacktestResult
@@ -15,6 +16,10 @@ from ...core.strategy_engine import StrategyEngine
 from ...core.backtest_engine import BacktestEngine
 from ...core.indicators import TechnicalIndicators
 from ...services.data_service import DataService
+from app.db.database import get_db
+from app.db.models import Strategy as StrategyORM
+from app.api.routes.auth import get_current_user
+from app.db.models import User as UserORM
 
 router = APIRouter()
 
@@ -300,3 +305,90 @@ async def strategy_service_health():
             "Risk management integration"
         ]
     } 
+
+# ---------------------- Phase 5 – Strategy Persistence ----------------------
+
+@router.post("/save", status_code=status.HTTP_201_CREATED)
+async def save_strategy(
+    strategy: Strategy,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Persist a strategy definition for the authenticated user."""
+    orm_obj = StrategyORM(
+        user_id=current_user.id,
+        name=strategy.name,
+        description=strategy.description,
+        definition=strategy.dict(),
+    )
+    db.add(orm_obj)
+    db.commit()
+    db.refresh(orm_obj)
+    return {"id": str(orm_obj.id), "message": "Strategy saved"}
+
+
+@router.get("/my", response_model=List[Dict[str, str]])
+async def list_my_strategies(
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """List strategies owned by the current user."""
+    rows = (
+        db.query(StrategyORM)
+        .filter(StrategyORM.user_id == current_user.id)
+        .order_by(StrategyORM.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "description": r.description or "",
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@router.get("/{strategy_id}", response_model=Dict[str, Dict])
+async def get_strategy(
+    strategy_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    orm_obj = db.query(StrategyORM).filter(StrategyORM.id == strategy_id).first()
+    if not orm_obj or orm_obj.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return {"strategy": orm_obj.definition}
+
+
+@router.put("/{strategy_id}")
+async def update_strategy(
+    strategy_id: str,
+    strategy: Strategy,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    orm_obj = db.query(StrategyORM).filter(StrategyORM.id == strategy_id).first()
+    if not orm_obj or orm_obj.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    orm_obj.name = strategy.name
+    orm_obj.description = strategy.description
+    orm_obj.definition = strategy.dict()
+    db.commit()
+    db.refresh(orm_obj)
+    return {"id": str(orm_obj.id), "message": "Strategy updated"}
+
+
+@router.delete("/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_strategy(
+    strategy_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    orm_obj = db.query(StrategyORM).filter(StrategyORM.id == strategy_id).first()
+    if not orm_obj or orm_obj.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    db.delete(orm_obj)
+    db.commit()
+    return 

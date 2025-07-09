@@ -2,9 +2,13 @@
 Backtest API Routes
 """
 
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Dict, Any, Optional, List, cast
 from datetime import datetime
+from sqlalchemy.orm import Session
+from app.api.routes.auth import get_current_user
+from app.db.database import get_db
+from app.db.models import Backtest as BacktestORM, User as UserORM
 
 from ...models.backtest import BacktestRequest, BacktestResult
 from ...tasks.backtest_tasks import run_backtest_task, get_backtest_status, cancel_backtest
@@ -13,26 +17,39 @@ from ...core.redis_manager import redis_manager
 router = APIRouter()
 
 @router.post("/run")
-async def run_backtest(backtest_request: BacktestRequest):
+async def run_backtest(backtest_request: BacktestRequest, db: Session = Depends(get_db), current_user: UserORM = Depends(get_current_user)):
     """Run backtest with Celery and real-time progress updates"""
     try:
-        # Start Celery task
+        # Create DB row with status pending
+        bt_row = BacktestORM(
+            user_id=current_user.id,
+            status="pending",
+            initial_capital=backtest_request.initial_capital,
+        )
+        db.add(bt_row)
+        db.commit()
+        db.refresh(bt_row)
+
+        # Start Celery task, pass identifiers
         task = run_backtest_task.delay(
+            backtest_db_id=str(bt_row.id),
+            user_id=str(current_user.id),
             strategy_data=backtest_request.strategy.dict(),
             timeframe=backtest_request.timeframe,
             start_date=backtest_request.start_date.isoformat(),
             end_date=backtest_request.end_date.isoformat(),
-            initial_capital=backtest_request.initial_capital
+            initial_capital=backtest_request.initial_capital,
         )
-        
+
+        db.commit()
+
         return {
             "task_id": task.id,
+            "backtest_id": str(bt_row.id),
             "status": "started",
             "message": "Backtest started with Celery",
             "websocket_url": f"/ws/backtest/{task.id}",
-            "celery_task_id": task.id
         }
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backtest execution failed: {str(e)}")
 
@@ -145,3 +162,50 @@ async def get_task_statistics():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving statistics: {str(e)}") 
+
+# ------------------ Phase 5 – Backtest Persistence Endpoints ------------------
+
+@router.get("/history", response_model=List[Dict[str, Any]])
+async def list_backtests(
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Return a summary of the current user's backtests."""
+    rows = (
+        db.query(BacktestORM)
+        .filter(BacktestORM.user_id == current_user.id)
+        .order_by(BacktestORM.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(r.id),
+            "status": str(r.status),  # type: ignore[arg-type]
+            "initial_capital": r.initial_capital,
+            "created_at": (
+                str(cast(Any, r.created_at)) if cast(Any, r.created_at) is not None else None
+            ),
+            "completed_at": (
+                str(cast(Any, r.completed_at)) if cast(Any, r.completed_at) is not None else None
+            ),
+            "result_available": bool(getattr(r, "result", None) is not None),  # type: ignore[call-arg]
+        }
+        for r in rows
+    ]  # type: ignore[return-value]
+
+
+@router.get("/history/{backtest_id}", response_model=Dict[str, Any])
+async def get_backtest_detail(
+    backtest_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Return stored backtest result JSON (if available)."""
+    row = db.query(BacktestORM).filter(BacktestORM.id == backtest_id).first()
+    if not row or row.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Backtest not found")
+    return {
+        "id": str(row.id),
+        "status": row.status,
+        "result": row.result,
+    } 

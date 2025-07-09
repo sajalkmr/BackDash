@@ -20,6 +20,8 @@ from ..core.redis_manager import redis_manager
 @celery_app.task(bind=True, name="run_backtest_task")
 def run_backtest_task(
     self,
+    backtest_db_id: str,
+    user_id: str,
     strategy_data: Dict[str, Any],
     timeframe: str,
     start_date: str,
@@ -137,9 +139,30 @@ def run_backtest_task(
         
         # Convert result to dictionary for JSON serialization
         result_dict = result.dict() if hasattr(result, 'dict') else result
-        
-        # Store result in Redis
-        redis_manager.store_task_result(task_id, result_dict)
+
+        # Persist to database
+        from app.db.database import SessionLocal  # local import to avoid Celery serialization issues
+        from app.db.models import Backtest as BacktestORM, Analytics as AnalyticsORM
+        db_sess = SessionLocal()
+        try:
+            bt_row = db_sess.query(BacktestORM).filter(BacktestORM.id == backtest_db_id).first()
+            if bt_row:
+                setattr(bt_row, "status", "completed")
+                setattr(bt_row, "completed_at", datetime.utcnow())
+                setattr(bt_row, "result", result_dict)
+                db_sess.commit()
+
+                # Save analytics metrics if present
+                metrics = result_dict.get("performance_metrics") if isinstance(result_dict, dict) else None
+                if metrics:
+                    analytics = AnalyticsORM(
+                        backtest_id=bt_row.id,
+                        metrics=metrics,
+                    )
+                    db_sess.add(analytics)
+                    db_sess.commit()
+        finally:
+            db_sess.close()
         
         # Update final status
         current_task.update_state(
@@ -166,12 +189,12 @@ def run_backtest_task(
         except RuntimeError:
             pass
         
-        return result_dict
+        return result_dict  # type: ignore[return-value]
         
     except Exception as e:
         error_message = f"Backtest failed: {str(e)}"
         
-        # Update error status
+        # Update error status and persist
         current_task.update_state(
             state='FAILURE',
             meta={
@@ -184,7 +207,18 @@ def run_backtest_task(
         )
         
         # Store error in Redis
-        redis_manager.store_task_error(task_id, str(e))
+
+        from app.db.database import SessionLocal as _SessionLocal
+        from app.db.models import Backtest as BacktestORM
+        db_err = _SessionLocal()
+        try:
+            bt_row = db_err.query(BacktestORM).filter(BacktestORM.id == backtest_db_id).first()
+            if bt_row:
+                setattr(bt_row, "status", "failed")
+                setattr(bt_row, "completed_at", datetime.utcnow())
+                setattr(bt_row, "result", {"error": str(e)})
+        finally:
+            db_err.close()
         
         # Broadcast error via WebSocket
         try:

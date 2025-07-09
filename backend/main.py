@@ -11,8 +11,9 @@ import asyncio
 from datetime import datetime
 
 from app.api.routes import strategy, data, analytics, websocket
-from app.api.routes import backtest, admin
+from app.api.routes import backtest, admin, auth as auth_routes
 from app.config import settings
+from app.db import Base, engine
 
 # Create FastAPI application with configuration-based settings
 app = FastAPI(
@@ -40,10 +41,14 @@ app.include_router(data.router, prefix="/api/v1/data", tags=["data"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
 app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["backtest"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(auth_routes.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 
 # Static files serving (for future use)
 # app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Initialize database tables
+Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 async def root():
