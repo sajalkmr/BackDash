@@ -1,15 +1,12 @@
 import { OHLCVData } from '../types';
 
-// Cache for calculated indicators
 const indicatorCache = new Map<string, number[]>();
-const CACHE_SIZE_LIMIT = 200; // Increased cache size for larger datasets
+const CACHE_SIZE_LIMIT = 200;
 
-// Clear cache when it gets too large
 function clearCacheIfNeeded(): void {
   if (indicatorCache.size > CACHE_SIZE_LIMIT) {
-    // Clear oldest entries instead of clearing all
     const entries = Array.from(indicatorCache.entries());
-    const toKeep = Math.floor(CACHE_SIZE_LIMIT * 0.7); // Keep 70% of cache
+    const toKeep = Math.floor(CACHE_SIZE_LIMIT * 0.7);
     indicatorCache.clear();
     entries.slice(-toKeep).forEach(([key, value]) => {
       indicatorCache.set(key, value);
@@ -26,19 +23,16 @@ export function calculateEMA(data: number[], period: number): number[] {
   const ema: number[] = new Array(data.length);
   const multiplier = 2 / (period + 1);
   
-  // Start with SMA for the first value
   let sum = 0;
   for (let i = 0; i < period && i < data.length; i++) {
     sum += data[i]!;
   }
   ema[period - 1] = sum / period;
   
-  // Calculate EMA for the rest
   for (let i = period; i < data.length; i++) {
     ema[i] = (data[i]! - ema[i - 1]!) * multiplier + ema[i - 1]!;
   }
   
-  // Cache the result
   indicatorCache.set(cacheKey, ema);
   clearCacheIfNeeded();
   
@@ -58,7 +52,6 @@ export function calculateRSI(data: number[], period: number = 14): number[] {
     return rsi;
   }
   
-  // Calculate price changes
   const gains: number[] = new Array(data.length - 1);
   const losses: number[] = new Array(data.length - 1);
   
@@ -68,7 +61,6 @@ export function calculateRSI(data: number[], period: number = 14): number[] {
     losses[i - 1] = change < 0 ? Math.abs(change) : 0;
   }
   
-  // Calculate initial average gain/loss
   let avgGain = 0;
   let avgLoss = 0;
   
@@ -80,7 +72,6 @@ export function calculateRSI(data: number[], period: number = 14): number[] {
   avgGain /= period;
   avgLoss /= period;
   
-  // Calculate RSI
   for (let i = period; i < data.length; i++) {
     if (i > period) {
       avgGain = (avgGain * (period - 1) + gains[i - 1]!) / period;
@@ -91,7 +82,6 @@ export function calculateRSI(data: number[], period: number = 14): number[] {
     rsi[i] = 100 - (100 / (1 + rs));
   }
   
-  // Cache the result
   indicatorCache.set(cacheKey, rsi);
   clearCacheIfNeeded();
   
@@ -117,14 +107,12 @@ export function calculateMACD(data: number[], fastPeriod: number = 12, slowPerio
   const signalLine: number[] = new Array(data.length);
   const histogram: number[] = new Array(data.length);
   
-  // Calculate MACD line
   for (let i = 0; i < data.length; i++) {
     if (fastEMA[i] !== undefined && slowEMA[i] !== undefined) {
       macdLine[i] = fastEMA[i]! - slowEMA[i]!;
     }
   }
   
-  // Calculate signal line (EMA of MACD line)
   const validMACD = macdLine.filter(v => v !== undefined);
   const signal = calculateEMA(validMACD, signalPeriod);
   let signalIndex = 0;
@@ -139,7 +127,6 @@ export function calculateMACD(data: number[], fastPeriod: number = 12, slowPerio
     }
   }
   
-  // Cache the result (combine all arrays)
   const combined = [...macdLine, ...signalLine, ...histogram];
   indicatorCache.set(cacheKey, combined);
   clearCacheIfNeeded();
@@ -147,16 +134,13 @@ export function calculateMACD(data: number[], fastPeriod: number = 12, slowPerio
   return { macdLine, signalLine, histogram };
 }
 
-// Optimized indicator value getter with caching
 const valueCache = new Map<string, number>();
-const VALUE_CACHE_SIZE_LIMIT = 500; // Increased for larger datasets
+const VALUE_CACHE_SIZE_LIMIT = 500;
 
-// Clear value cache when it gets too large
 function clearValueCacheIfNeeded(): void {
   if (valueCache.size > VALUE_CACHE_SIZE_LIMIT) {
-    // Clear oldest entries instead of clearing all
     const entries = Array.from(valueCache.entries());
-    const toKeep = Math.floor(VALUE_CACHE_SIZE_LIMIT * 0.7); // Keep 70% of cache
+    const toKeep = Math.floor(VALUE_CACHE_SIZE_LIMIT * 0.7);
     valueCache.clear();
     entries.slice(-toKeep).forEach(([key, value]) => {
       valueCache.set(key, value);
@@ -186,13 +170,12 @@ export function getIndicatorValue(data: OHLCVData[], indicator: string, index: n
       value = calculateMACD(prices).macdLine[currentIndex] || 0;
       break;
     case 'Bollinger Bands (20, 2)':
-      value = 0; // Not implemented yet
+      value = 0;
       break;
     case 'Price':
       value = data[index]?.close || 0;
       break;
     default:
-      // Handle legacy indicator names
       if (indicator.startsWith('EMA_')) {
         const period = parseInt(indicator.split('_')[1] || '20');
         value = calculateEMA(prices, period)[currentIndex] || 0;
@@ -202,14 +185,12 @@ export function getIndicatorValue(data: OHLCVData[], indicator: string, index: n
       }
   }
   
-  // Cache the result
   valueCache.set(cacheKey, value);
   clearValueCacheIfNeeded();
   
   return value;
 }
 
-// Function to clear all caches (useful for testing or memory management)
 export function clearIndicatorCaches(): void {
   indicatorCache.clear();
   valueCache.clear();
@@ -240,94 +221,18 @@ function calculateSMA(data: number[], period: number): number[] {
   return result;
 }
 
-function calculateRSI(data: number[], period: number): number[] {
-  const result = new Array(data.length).fill(0);
-  const gains = new Array(data.length).fill(0);
-  const losses = new Array(data.length).fill(0);
-  
-  for (let i = 1; i < data.length; i++) {
-    const change = data[i] - data[i - 1];
-    gains[i] = change > 0 ? change : 0;
-    losses[i] = change < 0 ? -change : 0;
-  }
-  
-  let avgGain = gains.slice(1, period + 1).reduce((a, b) => a + b) / period;
-  let avgLoss = losses.slice(1, period + 1).reduce((a, b) => a + b) / period;
-  
-  result[period] = 100 - (100 / (1 + avgGain / avgLoss));
-  
-  for (let i = period + 1; i < data.length; i++) {
-    avgGain = (avgGain * (period - 1) + gains[i]) / period;
-    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
-    result[i] = 100 - (100 / (1 + avgGain / avgLoss));
-  }
-  
-  return result;
-}
-
-function calculateMACD(data: number[]): number[] {
-  const fastPeriod = 12;
-  const slowPeriod = 26;
-  
-  const fastEMA = calculateEMA(data, fastPeriod);
-  const slowEMA = calculateEMA(data, slowPeriod);
-  
-  const macdLine = new Array(data.length).fill(0);
-  
-  for (let i = 0; i < data.length; i++) {
-    macdLine[i] = fastEMA[i] - slowEMA[i];
-  }
-  
-  return macdLine;
-}
-
 function calculateBollingerBands(data: number[], period: number): number[] {
   const sma = calculateSMA(data, period);
-  const upperBand = new Array(data.length).fill(0);
-  const lowerBand = new Array(data.length).fill(0);
+  const result = new Array(data.length).fill(0);
   
   for (let i = period - 1; i < data.length; i++) {
     let sum = 0;
     for (let j = 0; j < period; j++) {
       sum += Math.pow(data[i - j] - sma[i], 2);
     }
-    const stdDev = Math.sqrt(sum / period);
-    upperBand[i] = sma[i] + (2 * stdDev);
-    lowerBand[i] = sma[i] - (2 * stdDev);
+    const std = Math.sqrt(sum / period);
+    result[i] = std * 2;
   }
   
-  return upperBand;
+  return result;
 }
-
-export const availableIndicators = [
-  {
-    name: 'SMA',
-    type: 'sma',
-    description: 'Simple Moving Average',
-    parameters: ['period']
-  },
-  {
-    name: 'EMA',
-    type: 'ema',
-    description: 'Exponential Moving Average',
-    parameters: ['period']
-  },
-  {
-    name: 'RSI',
-    type: 'rsi',
-    description: 'Relative Strength Index',
-    parameters: ['period']
-  },
-  {
-    name: 'MACD',
-    type: 'macd',
-    description: 'Moving Average Convergence Divergence',
-    parameters: ['fastPeriod', 'slowPeriod', 'signalPeriod']
-  },
-  {
-    name: 'Bollinger Bands',
-    type: 'bb',
-    description: 'Bollinger Bands',
-    parameters: ['period', 'stdDev']
-  }
-];

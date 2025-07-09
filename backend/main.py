@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime
 
 from app.api.routes import strategy, data, analytics, websocket
+from app.api.routes import backtest, admin
 from app.config import settings
 
 # Create FastAPI application with configuration-based settings
@@ -37,6 +38,8 @@ app.add_middleware(
 app.include_router(strategy.router, prefix="/api/v1/strategy", tags=["strategy"])
 app.include_router(data.router, prefix="/api/v1/data", tags=["data"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
+app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["backtest"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 
 # Static files serving (for future use)

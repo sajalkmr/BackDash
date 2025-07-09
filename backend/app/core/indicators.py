@@ -1,5 +1,5 @@
 """
-Technical Indicators Library - Comprehensive indicator calculations
+Technical Indicators Library
 """
 
 import pandas as pd
@@ -7,7 +7,7 @@ import numpy as np
 from typing import Dict, Any, Tuple, Optional, Union
 
 class TechnicalIndicators:
-    """Comprehensive technical indicators calculation engine"""
+    """Technical indicators calculation engine"""
     
     @staticmethod
     def calculate_indicator(
@@ -173,7 +173,7 @@ class TechnicalIndicators:
     
     @staticmethod
     def get_available_indicators() -> Dict[str, Dict[str, Any]]:
-        """Get comprehensive list of available indicators with metadata"""
+        """Get list of available indicators with metadata"""
         return {
             "sma": {
                 "name": "Simple Moving Average",
@@ -248,63 +248,36 @@ class TechnicalIndicators:
     @staticmethod
     def calculate_multiple_indicators(
         data: pd.DataFrame, 
-        indicator_configs: list
+        indicators: list
     ) -> Dict[str, pd.Series]:
-        """Calculate multiple indicators efficiently"""
+        """Calculate multiple indicators at once"""
         results = {}
         
-        for config in indicator_configs:
-            indicator_type = config.get('type')
-            period = config.get('period', 14)
-            source = config.get('source', 'close')
+        for indicator_config in indicators:
+            indicator_type = indicator_config.get('type', '')
+            period = indicator_config.get('period', 14)
+            source = indicator_config.get('source', 'close')
             
-            if indicator_type == "macd":
-                fast = config.get('fast_period', 12)
-                slow = config.get('slow_period', 26)
-                signal = config.get('signal_period', 9)
-                indicator_name = f"{indicator_type}_{fast}_{slow}_{signal}"
+            if not indicator_type:
+                continue
                 
-                macd_line, signal_line, histogram = TechnicalIndicators.calculate_indicator(
-                    data, indicator_type, source, period,
-                    fast_period=fast, slow_period=slow, signal_period=signal
-                )
+            # Calculate the indicator with additional parameters
+            indicator_result = TechnicalIndicators.calculate_indicator(
+                data=data,
+                indicator_type=indicator_type,
+                source=source,
+                period=period,
+                **{k: v for k, v in indicator_config.items() 
+                   if k not in ['type', 'period', 'source']}
+            )
+            
+            # Store the result with an appropriate name
+            name = f"{indicator_type.upper()}_{period}"
+            if 'name' in indicator_config:
+                name = indicator_config['name']
                 
-                results[f"{indicator_name}_line"] = macd_line
-                results[f"{indicator_name}_signal"] = signal_line
-                results[f"{indicator_name}_histogram"] = histogram
-                
-            elif indicator_type == "bb":
-                std_dev = config.get('std_dev', 2.0)
-                indicator_name = f"{indicator_type}_{period}"
-                
-                upper, middle, lower = TechnicalIndicators.calculate_indicator(
-                    data, indicator_type, source, period, std_dev=std_dev
-                )
-                
-                results[f"{indicator_name}_upper"] = upper
-                results[f"{indicator_name}_middle"] = middle
-                results[f"{indicator_name}_lower"] = lower
-                
-            elif indicator_type == "stoch":
-                k_period = config.get('k_period', 14)
-                d_period = config.get('d_period', 3)
-                indicator_name = f"{indicator_type}_{k_period}_{d_period}"
-                
-                k_percent, d_percent = TechnicalIndicators.calculate_indicator(
-                    data, indicator_type, source, period,
-                    k_period=k_period, d_period=d_period
-                )
-                
-                results[f"{indicator_name}_k"] = k_percent
-                results[f"{indicator_name}_d"] = d_percent
-                
-            else:
-                indicator_name = f"{indicator_type}_{period}"
-                result = TechnicalIndicators.calculate_indicator(
-                    data, indicator_type, source, period
-                )
-                results[indicator_name] = result
-        
+            results[name] = indicator_result
+            
         return results
 
 def calculate_indicator(
@@ -314,7 +287,11 @@ def calculate_indicator(
     period: int = 14,
     **kwargs
 ) -> Union[pd.Series, Tuple[pd.Series, ...]]:
-    """Legacy function for backward compatibility"""
+    """Convenience function to calculate a single indicator"""
     return TechnicalIndicators.calculate_indicator(
-        market_data, indicator_type, source, period, **kwargs
+        data=market_data,
+        indicator_type=indicator_type,
+        source=source,
+        period=period,
+        **kwargs
     ) 

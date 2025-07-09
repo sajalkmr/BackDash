@@ -55,6 +55,7 @@ ccxt==4.1.38
 
 # Background task processing
 celery==5.3.4
+flower==2.0.1
 
 # Monitoring and logging
 structlog==23.2.0

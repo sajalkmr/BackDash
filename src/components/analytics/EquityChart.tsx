@@ -1,6 +1,6 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
-import { BacktestResult } from '../types';
+import { BacktestResult } from '../../types';
 
 interface EquityChartProps {
   result: BacktestResult | null;
@@ -29,7 +29,6 @@ export function EquityChart({ result }: EquityChartProps) {
       <h2 className="text-xl font-bold text-white mb-6">Equity Curve & Drawdown</h2>
       
       <div className="space-y-6">
-        {/* Equity Curve */}
         <div className="h-64">
           <h3 className="text-lg font-semibold text-white mb-4">Portfolio Value</h3>
           <ResponsiveContainer width="100%" height="100%">
@@ -73,7 +72,6 @@ export function EquityChart({ result }: EquityChartProps) {
           </ResponsiveContainer>
         </div>
 
-        {/* Drawdown Chart */}
         <div className="h-48">
           <h3 className="text-lg font-semibold text-white mb-4">Drawdown</h3>
           <ResponsiveContainer width="100%" height="100%">

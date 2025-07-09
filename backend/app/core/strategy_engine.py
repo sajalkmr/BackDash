@@ -1,6 +1,5 @@
 """
-Enhanced Strategy Engine - Advanced logic evaluation and signal processing
-Strategic integration from 'mine' project with enhanced capabilities
+Enhanced Strategy Engine
 """
 
 from typing import Dict, Any, List, Optional
@@ -10,7 +9,7 @@ import numpy as np
 from ..models.strategy import LogicalExpression, LogicalCondition, Strategy
 
 class StrategyEngine:
-    """Enhanced engine for evaluating strategy conditions and signals"""
+    """Engine for evaluating strategy conditions and signals"""
     
     def __init__(self):
         self.previous_indicators = {}
@@ -44,7 +43,7 @@ class StrategyEngine:
         current_bar: pd.Series,
         previous_bar: Optional[pd.Series] = None
     ) -> bool:
-        """Evaluate a single logical condition with enhanced operators"""
+        """Evaluate a single logical condition"""
         if condition.operator in ["crosses_above", "crosses_below"]:
             return self._evaluate_crossover(condition, indicators, current_bar, previous_bar)
         
@@ -100,7 +99,7 @@ class StrategyEngine:
         indicators: Dict[str, float], 
         current_bar: pd.Series
     ) -> float:
-        """Get the numeric value of an operand with enhanced resolution"""
+        """Get the numeric value of an operand"""
         if isinstance(operand, (int, float)):
             return float(operand)
         
@@ -133,7 +132,7 @@ class StrategyEngine:
         return 0.0
     
     def _apply_operators(self, results: List[bool], operators: List[str]) -> bool:
-        """Apply logical operators to combine condition results with enhanced logic"""
+        """Apply logical operators to combine condition results"""
         if len(results) == 1:
             return results[0]
         

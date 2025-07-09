@@ -1,5 +1,6 @@
 """
-Analytics Models - Advanced performance analysis and metrics
+Advanced Analytics Models - Enhanced performance metrics and analytics
+Phase 4: Advanced Analytics Implementation
 """
 
 from typing import Dict, List, Optional, Any
@@ -7,162 +8,222 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
 
-class AnalyticsPeriod(str, Enum):
-    """Analytics calculation periods"""
-    DAILY = "daily"
-    WEEKLY = "weekly"
-    MONTHLY = "monthly"
-    QUARTERLY = "quarterly"
-    YEARLY = "yearly"
-    ALL_TIME = "all_time"
+class ComparisonType(str, Enum):
+    """Types of comparison analysis"""
+    BENCHMARK = "benchmark"
+    MULTI_STRATEGY = "multi_strategy"
+    PEER_GROUP = "peer_group"
+
+class CoreMetrics(BaseModel):
+    """Core performance metrics"""
+    pnl_percent: float = Field(..., description="Total P&L percentage")
+    pnl_dollars: float = Field(..., description="Total P&L in dollars")
+    cagr_percent: float = Field(..., description="Compound Annual Growth Rate")
+    sharpe_ratio: float = Field(..., description="Sharpe ratio")
+    sortino_ratio: float = Field(..., description="Sortino ratio")
+    calmar_ratio: float = Field(..., description="Calmar ratio")
+    max_drawdown_percent: float = Field(..., description="Maximum drawdown percentage")
+    max_drawdown_dollars: float = Field(..., description="Maximum drawdown in dollars")
+    volatility_percent: float = Field(..., description="Annualized volatility percentage")
+
+class TradingMetrics(BaseModel):
+    """Trading-specific metrics"""
+    total_trades: int = Field(..., description="Total number of trades")
+    win_rate_percent: float = Field(..., description="Win rate percentage")
+    avg_trade_duration_hours: float = Field(..., description="Average trade duration in hours")
+    largest_win_percent: float = Field(..., description="Largest winning trade percentage")
+    largest_loss_percent: float = Field(..., description="Largest losing trade percentage")
+    turnover_percent: float = Field(..., description="Portfolio turnover percentage")
+    profit_factor: float = Field(..., description="Profit factor (gross profit / gross loss)")
+    avg_win_percent: float = Field(..., description="Average winning trade percentage")
+    avg_loss_percent: float = Field(..., description="Average losing trade percentage")
+    
+    # Enhanced trading metrics
+    expectancy: float = Field(default=0, description="Mathematical expectancy per trade")
+    ulcer_index: float = Field(default=0, description="Ulcer Index for risk measurement")
+    recovery_factor: float = Field(default=0, description="Net profit / Max drawdown")
+    max_consecutive_wins: int = Field(default=0, description="Maximum consecutive winning trades")
+    max_consecutive_losses: int = Field(default=0, description="Maximum consecutive losing trades")
 
 class RiskMetrics(BaseModel):
-    """Advanced risk analysis metrics"""
-    # Value at Risk (VaR)
-    var_95_daily: float = Field(..., description="95% Daily Value at Risk")
-    var_99_daily: float = Field(..., description="99% Daily Value at Risk")
-    cvar_95_daily: float = Field(..., description="95% Conditional Value at Risk")
+    """Risk-related metrics"""
+    value_at_risk_95: float = Field(..., description="Value at Risk at 95% confidence")
+    value_at_risk_99: float = Field(..., description="Value at Risk at 99% confidence")
+    leverage_percent: float = Field(..., description="Average leverage percentage")
+    beta_to_benchmark: Optional[float] = Field(default=None, description="Beta relative to benchmark")
+    max_consecutive_losses: int = Field(..., description="Maximum consecutive losing trades")
+    downside_deviation: float = Field(..., description="Downside deviation")
     
-    # Risk ratios
-    information_ratio: float = Field(..., description="Information ratio")
-    treynor_ratio: Optional[float] = Field(default=None, description="Treynor ratio")
-    jensen_alpha: Optional[float] = Field(default=None, description="Jensen's alpha")
-    
-    # Volatility metrics
-    realized_volatility: float = Field(..., description="Realized volatility")
-    volatility_of_volatility: float = Field(..., description="Volatility of volatility")
-    
-    # Tail risk metrics
-    skewness: float = Field(..., description="Return distribution skewness")
-    kurtosis: float = Field(..., description="Return distribution kurtosis")
-    tail_ratio: float = Field(..., description="Tail ratio (95th/5th percentile)")
-    
-    # Tracking metrics
-    tracking_error: Optional[float] = Field(default=None, description="Tracking error vs benchmark")
-    active_return: Optional[float] = Field(default=None, description="Active return vs benchmark")
+    # Enhanced risk metrics
+    conditional_var_95: float = Field(default=0, description="Conditional VaR at 95%")
+    conditional_var_99: float = Field(default=0, description="Conditional VaR at 99%")
+    omega_ratio: float = Field(default=0, description="Omega ratio")
+    kappa_3: float = Field(default=0, description="Kappa 3 (skewness preference)")
+    gain_pain_ratio: float = Field(default=0, description="Gain to Pain ratio")
+    sterling_ratio: float = Field(default=0, description="Sterling ratio")
 
-class PerformanceAttribution(BaseModel):
-    """Performance attribution analysis"""
-    # Time-based attribution
-    monthly_returns: List[Dict[str, float]] = Field(default=[], description="Monthly return breakdown")
-    quarterly_returns: List[Dict[str, float]] = Field(default=[], description="Quarterly return breakdown")
-    yearly_returns: List[Dict[str, float]] = Field(default=[], description="Yearly return breakdown")
-    
-    # Factor attribution (for future implementation)
-    market_timing_effect: Optional[float] = Field(default=None, description="Market timing attribution")
-    security_selection_effect: Optional[float] = Field(default=None, description="Security selection attribution")
-    
-    # Rolling metrics
-    rolling_sharpe_30d: List[Dict[str, Any]] = Field(default=[], description="30-day rolling Sharpe ratio")
-    rolling_volatility_30d: List[Dict[str, Any]] = Field(default=[], description="30-day rolling volatility")
-    rolling_drawdown: List[Dict[str, Any]] = Field(default=[], description="Rolling drawdown analysis")
+class DrawdownPeriod(BaseModel):
+    """Individual drawdown period"""
+    start_date: datetime = Field(..., description="Drawdown start date")
+    end_date: Optional[datetime] = Field(default=None, description="Drawdown end date")
+    peak_value: float = Field(..., description="Portfolio value at peak")
+    trough_value: float = Field(..., description="Portfolio value at trough")
+    drawdown_percent: float = Field(..., description="Drawdown percentage")
+    duration_days: Optional[int] = Field(default=None, description="Drawdown duration in days")
+    recovery_days: Optional[int] = Field(default=None, description="Recovery duration in days")
+    underwater_days: int = Field(default=0, description="Total days underwater")
 
-class TradeAnalysis(BaseModel):
-    """Detailed trade analysis"""
-    # Trade distribution
-    trade_size_distribution: Dict[str, int] = Field(default={}, description="Trade size distribution")
-    trade_duration_distribution: Dict[str, int] = Field(default={}, description="Trade duration distribution")
-    hourly_trade_distribution: Dict[str, int] = Field(default={}, description="Hourly trade distribution")
-    daily_trade_distribution: Dict[str, int] = Field(default={}, description="Daily trade distribution")
+class MonthlyReturns(BaseModel):
+    """Monthly returns breakdown"""
+    year: int = Field(..., description="Year")
+    month: int = Field(..., description="Month (1-12)")
+    return_percent: float = Field(..., description="Monthly return percentage")
+    trades_count: int = Field(..., description="Number of trades in the month")
+    drawdown_percent: float = Field(default=0, description="Max drawdown in the month")
+    volatility_percent: float = Field(default=0, description="Monthly volatility")
+
+class PerformanceAnalytics(BaseModel):
+    """Complete performance analytics"""
+    backtest_id: str = Field(..., description="Associated backtest ID")
+    generated_at: datetime = Field(..., description="Analytics generation timestamp")
     
-    # Performance by characteristics
-    performance_by_hour: Dict[str, float] = Field(default={}, description="Performance by hour of day")
-    performance_by_day: Dict[str, float] = Field(default={}, description="Performance by day of week")
-    performance_by_month: Dict[str, float] = Field(default={}, description="Performance by month")
+    # Core performance metrics
+    core_metrics: CoreMetrics = Field(..., description="Core performance metrics")
     
-    # Trade streaks
-    win_streak_analysis: Dict[str, Any] = Field(default={}, description="Winning streak analysis")
-    loss_streak_analysis: Dict[str, Any] = Field(default={}, description="Losing streak analysis")
+    # Trading metrics
+    trading_metrics: TradingMetrics = Field(..., description="Trading-specific metrics")
     
-    # Risk per trade
-    avg_risk_per_trade: float = Field(default=0, description="Average risk per trade")
-    max_risk_per_trade: float = Field(default=0, description="Maximum risk per trade")
-    risk_adjusted_returns: float = Field(default=0, description="Risk-adjusted returns")
+    # Risk metrics
+    risk_metrics: RiskMetrics = Field(..., description="Risk-related metrics")
+    
+    # Detailed breakdowns
+    monthly_returns: List[MonthlyReturns] = Field(default=[], description="Monthly returns breakdown")
+    drawdown_periods: List[DrawdownPeriod] = Field(default=[], description="All drawdown periods")
+    
+    # Return distributions
+    daily_returns: List[float] = Field(default=[], description="Daily return percentages")
+    trade_returns: List[float] = Field(default=[], description="Individual trade return percentages")
+    
+    # Rolling metrics (30-day windows)
+    rolling_sharpe: List[float] = Field(default=[], description="30-day rolling Sharpe ratio")
+    rolling_volatility: List[float] = Field(default=[], description="30-day rolling volatility")
+    rolling_returns: List[float] = Field(default=[], description="30-day rolling returns")
 
 class BenchmarkComparison(BaseModel):
-    """Benchmark comparison analysis"""
+    """Comparison with benchmark"""
     benchmark_symbol: str = Field(..., description="Benchmark symbol")
-    benchmark_return: float = Field(..., description="Benchmark total return")
+    benchmark_name: str = Field(default="", description="Human-readable benchmark name")
+    
+    # Return comparison
     strategy_return: float = Field(..., description="Strategy total return")
-    excess_return: float = Field(..., description="Excess return vs benchmark")
+    benchmark_return: float = Field(..., description="Benchmark total return")
+    excess_return: float = Field(..., description="Excess return over benchmark")
     
-    # Regression analysis
-    alpha: float = Field(..., description="Alpha (intercept)")
-    beta: float = Field(..., description="Beta (slope)")
-    r_squared: float = Field(..., description="R-squared")
-    correlation: float = Field(..., description="Correlation coefficient")
+    # Risk-adjusted comparison
+    tracking_error: float = Field(..., description="Tracking error")
+    information_ratio: float = Field(..., description="Information ratio")
+    correlation: float = Field(..., description="Correlation with benchmark")
+    beta: float = Field(default=1.0, description="Beta coefficient")
+    alpha: float = Field(default=0, description="Jensen's alpha")
     
-    # Up/Down capture ratios
-    up_capture_ratio: float = Field(..., description="Up market capture ratio")
-    down_capture_ratio: float = Field(..., description="Down market capture ratio")
+    # Drawdown comparison
+    strategy_max_drawdown: float = Field(..., description="Strategy max drawdown")
+    benchmark_max_drawdown: float = Field(..., description="Benchmark max drawdown")
     
-    # Performance periods
-    outperformance_periods: int = Field(..., description="Number of periods outperforming")
-    underperformance_periods: int = Field(..., description="Number of periods underperforming")
-    outperformance_percentage: float = Field(..., description="Percentage of periods outperforming")
+    # Timeline data for charts
+    benchmark_equity_curve: List[Dict[str, Any]] = Field(default=[], description="Benchmark equity curve")
+    relative_performance: List[Dict[str, Any]] = Field(default=[], description="Relative performance over time")
 
-class MonteCarloAnalysis(BaseModel):
-    """Monte Carlo simulation results"""
-    simulations_count: int = Field(..., description="Number of simulations run")
-    confidence_intervals: Dict[str, Dict[str, float]] = Field(..., description="Confidence intervals for key metrics")
+class StrategyComparison(BaseModel):
+    """Multi-strategy comparison"""
+    strategy_id: str = Field(..., description="Strategy identifier")
+    strategy_name: str = Field(..., description="Strategy name")
     
-    # Probability distributions
-    prob_positive_return: float = Field(..., description="Probability of positive return")
-    prob_target_return: Optional[float] = Field(default=None, description="Probability of achieving target return")
-    prob_max_drawdown: Dict[str, float] = Field(default={}, description="Probability of various drawdown levels")
+    # Performance summary
+    total_return: float = Field(..., description="Total return")
+    cagr: float = Field(..., description="CAGR")
+    sharpe_ratio: float = Field(..., description="Sharpe ratio")
+    max_drawdown: float = Field(..., description="Maximum drawdown")
+    volatility: float = Field(..., description="Volatility")
     
-    # Percentile analysis
-    return_percentiles: Dict[str, float] = Field(..., description="Return percentiles (5th, 25th, 50th, 75th, 95th)")
-    drawdown_percentiles: Dict[str, float] = Field(..., description="Drawdown percentiles")
+    # Rank among compared strategies
+    rank_return: int = Field(default=0, description="Rank by return")
+    rank_sharpe: int = Field(default=0, description="Rank by Sharpe ratio")
+    rank_drawdown: int = Field(default=0, description="Rank by drawdown (lower is better)")
     
-    # Scenario analysis
-    best_case_scenario: Dict[str, float] = Field(..., description="Best case scenario metrics")
-    worst_case_scenario: Dict[str, float] = Field(..., description="Worst case scenario metrics")
-    median_scenario: Dict[str, float] = Field(..., description="Median scenario metrics")
+    # Risk-adjusted metrics
+    sortino_ratio: float = Field(default=0, description="Sortino ratio")
+    calmar_ratio: float = Field(default=0, description="Calmar ratio")
+    
+    # Additional context
+    total_trades: int = Field(default=0, description="Total number of trades")
+    win_rate: float = Field(default=0, description="Win rate percentage")
 
-class AnalyticsReport(BaseModel):
-    """Comprehensive analytics report"""
-    # Report metadata
-    report_id: str = Field(..., description="Unique report identifier")
-    backtest_id: str = Field(..., description="Associated backtest ID")
-    generated_at: datetime = Field(default_factory=datetime.now, description="Report generation timestamp")
-    period: AnalyticsPeriod = Field(..., description="Analysis period")
+class MultiStrategyAnalysis(BaseModel):
+    """Multi-strategy comparison analysis"""
+    comparison_id: str = Field(..., description="Comparison analysis ID")
+    generated_at: datetime = Field(..., description="Analysis generation timestamp")
     
-    # Core analytics
-    risk_metrics: RiskMetrics = Field(..., description="Advanced risk metrics")
-    performance_attribution: PerformanceAttribution = Field(..., description="Performance attribution analysis")
-    trade_analysis: TradeAnalysis = Field(..., description="Detailed trade analysis")
+    # Strategy comparisons
+    strategies: List[StrategyComparison] = Field(..., description="Individual strategy comparisons")
     
-    # Optional advanced analysis
+    # Summary statistics
+    best_return_strategy: str = Field(..., description="Strategy with best return")
+    best_sharpe_strategy: str = Field(..., description="Strategy with best Sharpe ratio")
+    lowest_drawdown_strategy: str = Field(..., description="Strategy with lowest drawdown")
+    
+    # Portfolio statistics if combined
+    correlation_matrix: Dict[str, Dict[str, float]] = Field(default={}, description="Strategy correlation matrix")
+    
+    # Efficient frontier data
+    efficient_frontier: List[Dict[str, float]] = Field(default=[], description="Risk-return efficient frontier")
+
+class ExportData(BaseModel):
+    """Data export package"""
+    export_id: str = Field(..., description="Export identifier")
+    export_type: str = Field(..., description="Type of export (CSV, Excel, PDF)")
+    generated_at: datetime = Field(..., description="Export generation timestamp")
+    
+    # Data packages
+    performance_data: Dict[str, Any] = Field(default={}, description="Performance data")
+    trade_data: List[Dict[str, Any]] = Field(default=[], description="Individual trade data")
+    daily_data: List[Dict[str, Any]] = Field(default=[], description="Daily portfolio data")
+    
+    # Chart data
+    chart_configs: List[Dict[str, Any]] = Field(default=[], description="Chart configuration data")
+    
+    # Metadata
+    strategy_config: Dict[str, Any] = Field(default={}, description="Strategy configuration")
+    backtest_params: Dict[str, Any] = Field(default={}, description="Backtest parameters")
+
+class CompleteAnalytics(BaseModel):
+    """Complete analytics package"""
+    performance: PerformanceAnalytics = Field(..., description="Performance analytics")
     benchmark_comparison: Optional[BenchmarkComparison] = Field(default=None, description="Benchmark comparison")
-    monte_carlo_analysis: Optional[MonteCarloAnalysis] = Field(default=None, description="Monte Carlo simulation results")
+    multi_strategy_analysis: Optional[MultiStrategyAnalysis] = Field(default=None, description="Multi-strategy analysis")
     
-    # Custom metrics
-    custom_metrics: Dict[str, Any] = Field(default={}, description="Custom user-defined metrics")
+    # Chart data for frontend
+    equity_curve: List[Dict[str, Any]] = Field(default=[], description="Equity curve data points")
+    drawdown_chart: List[Dict[str, Any]] = Field(default=[], description="Drawdown chart data points")
+    monthly_heatmap: List[List[float]] = Field(default=[], description="Monthly returns heatmap data")
+    returns_distribution: List[Dict[str, Any]] = Field(default=[], description="Returns distribution histogram")
+    rolling_metrics_chart: List[Dict[str, Any]] = Field(default=[], description="Rolling metrics over time")
     
-    # Export settings
-    include_charts: bool = Field(default=True, description="Include chart data")
-    chart_data: Optional[Dict[str, Any]] = Field(default=None, description="Chart data for visualization")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "report_id": "rpt_001",
-                "backtest_id": "bt_001",
-                "period": "quarterly",
-                "risk_metrics": {
-                    "var_95_daily": -0.025,
-                    "var_99_daily": -0.045,
-                    "information_ratio": 1.2,
-                    "realized_volatility": 0.35,
-                    "skewness": -0.15,
-                    "kurtosis": 3.2
-                },
-                "trade_analysis": {
-                    "avg_risk_per_trade": 1500,
-                    "max_risk_per_trade": 5000,
-                    "risk_adjusted_returns": 0.85
-                },
-                "include_charts": True
-            }
-        } 
+    # Export capabilities
+    export_data: Optional[ExportData] = Field(default=None, description="Export data package")
+
+# Additional utility models
+class AnalyticsRequest(BaseModel):
+    """Request for analytics calculation"""
+    backtest_ids: List[str] = Field(..., description="List of backtest IDs to analyze")
+    benchmark_symbol: Optional[str] = Field(default="BTC-USDT", description="Benchmark for comparison")
+    comparison_type: ComparisonType = Field(default=ComparisonType.BENCHMARK, description="Type of analysis")
+    include_rolling_metrics: bool = Field(default=True, description="Include rolling metrics")
+    rolling_window_days: int = Field(default=30, description="Rolling window size in days")
+
+class AnalyticsConfiguration(BaseModel):
+    """Configuration for analytics calculation"""
+    risk_free_rate: float = Field(default=0.02, description="Risk-free rate for calculations")
+    confidence_levels: List[float] = Field(default=[0.95, 0.99], description="VaR confidence levels")
+    benchmark_symbols: List[str] = Field(default=["BTC-USDT", "ETH-USDT"], description="Available benchmarks")
+    export_formats: List[str] = Field(default=["CSV", "Excel", "PDF"], description="Supported export formats") 

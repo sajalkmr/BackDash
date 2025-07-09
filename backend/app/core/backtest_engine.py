@@ -1,6 +1,5 @@
 """
 Enhanced Backtest Engine - Event-driven backtesting with advanced features
-Strategic integration from 'mine' project with enhanced capabilities
 """
 
 from typing import List, Tuple, Dict, Optional
@@ -79,7 +78,7 @@ class Portfolio:
                 # Calculate PnL for sell trade
                 trade.exit_time = timestamp
                 trade.exit_price = execution_price
-                # Find matching buy trade for PnL calculation (simplified)
+                # Find matching buy trade for PnL calculation
                 for prev_trade in reversed(self.trade_history):
                     if (prev_trade.symbol == symbol and 
                         prev_trade.action == TradeAction.BUY and 
@@ -145,15 +144,6 @@ class BacktestEngine:
     ) -> BacktestResult:
         """
         Execute comprehensive strategy backtest
-        
-        Args:
-            strategy: Strategy configuration
-            market_data: OHLCV market data
-            initial_capital: Starting capital
-            progress_callback: Optional callback for progress updates
-            
-        Returns:
-            Complete backtest results with metrics
         """
         start_time = datetime.now()
         
@@ -171,7 +161,7 @@ class BacktestEngine:
             symbol = strategy.asset_selection.symbol
             current_position = 0.0
             entry_trade = None
-            warmup_period = 50  # Skip first 50 bars for indicator warmup
+            warmup_period = 50
             
             total_bars = len(market_data)
             
@@ -248,102 +238,72 @@ class BacktestEngine:
                             current_position = 0.0
                             entry_trade = None
                 
-                # Record portfolio snapshot
+                # Record portfolio state
                 portfolio.record_snapshot(current_time, {symbol: current_price})
             
+            # Calculate final performance metrics
             if progress_callback:
-                await progress_callback(95, "Calculating performance metrics...")
+                await progress_callback(90, "Calculating performance metrics...")
             
-            # Calculate comprehensive metrics
-            metrics = self._calculate_comprehensive_metrics(
-                portfolio, market_data, strategy, start_time
+            result = self._calculate_comprehensive_metrics(
+                portfolio=portfolio,
+                market_data=market_data,
+                strategy=strategy,
+                start_time=start_time
             )
             
             if progress_callback:
-                await progress_callback(100, "Backtest completed successfully!")
+                await progress_callback(100, "Backtest completed successfully")
             
-            return metrics
+            return result
             
         except Exception as e:
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            # Return error result
-            return BacktestResult(
-                backtest_id=str(uuid.uuid4()),
-                strategy_name=strategy.name,
-                symbol=strategy.asset_selection.symbol,
-                timeframe="unknown",
-                start_date=market_data.index[0] if not market_data.empty else datetime.now(),
-                end_date=market_data.index[-1] if not market_data.empty else datetime.now(),
-                duration_days=0,
-                initial_capital=initial_capital,
-                final_capital=initial_capital,
-                total_pnl=0,
-                performance_metrics=PerformanceMetrics(
-                    total_return_pct=0, annual_return_pct=0, monthly_return_pct=0,
-                    daily_return_pct=0, sharpe_ratio=0, sortino_ratio=0,
-                    calmar_ratio=0, volatility_annual=0, downside_deviation=0
-                ),
-                drawdown_metrics=DrawdownMetrics(
-                    max_drawdown_pct=0, max_drawdown_duration_days=0,
-                    avg_drawdown_pct=0, avg_drawdown_duration_days=0,
-                    drawdown_periods=0, recovery_factor=0,
-                    time_underwater_pct=0, max_time_to_recovery_days=0
-                ),
-                trading_metrics=TradingMetrics(
-                    total_trades=0, winning_trades=0, losing_trades=0,
-                    win_rate_pct=0, profit_factor=0, avg_trade_return_pct=0,
-                    avg_win_return_pct=0, avg_loss_return_pct=0,
-                    avg_trade_duration_hours=0, avg_win_duration_hours=0,
-                    avg_loss_duration_hours=0, best_trade_return_pct=0,
-                    worst_trade_return_pct=0, max_consecutive_wins=0,
-                    max_consecutive_losses=0
-                ),
-                trades=portfolio.trade_history,
-                status="failed",
-                execution_time_seconds=execution_time,
-                error_message=str(e)
-            )
+            if progress_callback:
+                await progress_callback(-1, f"Error during backtest: {str(e)}")
+            raise
     
     def _calculate_all_indicators(self, strategy: Strategy, market_data: pd.DataFrame) -> Dict:
-        """Calculate all required indicators"""
-        indicator_configs = []
+        """Calculate all indicators needed for the strategy"""
+        indicators = {}
         
-        for indicator in strategy.signal_generation.indicators:
-            config = {
-                'type': indicator.type,
-                'period': indicator.period,
-                'source': indicator.source
-            }
-            
-            if indicator.type == "macd":
-                config.update({
-                    'fast_period': indicator.fast_period,
-                    'slow_period': indicator.slow_period,
-                    'signal_period': indicator.signal_period
-                })
-            elif indicator.type == "bb":
-                config['std_dev'] = indicator.std_dev
-            elif indicator.type == "stoch":
-                config.update({
-                    'k_period': indicator.k_period,
-                    'd_period': indicator.d_period
-                })
-            
-            indicator_configs.append(config)
+        # Entry condition indicators
+        for condition in strategy.entry_conditions:
+            if condition.indicator.name not in indicators:
+                indicator_data = self.indicators_engine.calculate_indicator(
+                    data=market_data,
+                    indicator_type=condition.indicator.type,
+                    source=condition.indicator.source,
+                    period=condition.indicator.period,
+                    **condition.indicator.parameters
+                )
+                indicators[condition.indicator.name] = indicator_data
         
-        return TechnicalIndicators.calculate_multiple_indicators(market_data, indicator_configs)
+        # Exit condition indicators
+        for condition in strategy.exit_conditions:
+            if condition.indicator.name not in indicators:
+                indicator_data = self.indicators_engine.calculate_indicator(
+                    data=market_data,
+                    indicator_type=condition.indicator.type,
+                    source=condition.indicator.source,
+                    period=condition.indicator.period,
+                    **condition.indicator.parameters
+                )
+                indicators[condition.indicator.name] = indicator_data
+        
+        return indicators
     
     def _get_current_indicators(self, indicators_data: Dict, index: int) -> Dict:
-        """Get indicator values at current index"""
-        current_indicators = {}
+        """Get indicator values at the current index"""
+        current_values = {}
         
         for name, data in indicators_data.items():
-            if isinstance(data, pd.Series) and len(data) > index:
-                value = data.iloc[index]
-                current_indicators[name] = float(value) if not pd.isna(value) else 0.0
-        
-        return current_indicators
+            if isinstance(data, tuple):
+                # Handle indicators with multiple outputs
+                current_values[name] = [series.iloc[index] for series in data]
+            else:
+                current_values[name] = data.iloc[index]
+                
+        return current_values
     
     def _check_entry_signal(
         self, 
@@ -354,10 +314,7 @@ class BacktestEngine:
     ) -> bool:
         """Check if entry conditions are met"""
         return self.strategy_engine.evaluate_conditions(
-            strategy.signal_generation.entry_conditions,
-            indicators,
-            current_bar,
-            previous_bar
+            strategy.entry_conditions, indicators, current_bar, previous_bar
         )
     
     def _check_exit_signal(
@@ -369,10 +326,7 @@ class BacktestEngine:
     ) -> bool:
         """Check if exit conditions are met"""
         return self.strategy_engine.evaluate_conditions(
-            strategy.signal_generation.exit_conditions,
-            indicators,
-            current_bar,
-            previous_bar
+            strategy.exit_conditions, indicators, current_bar, previous_bar
         )
     
     def _check_risk_management(
@@ -381,21 +335,22 @@ class BacktestEngine:
         current_price: float, 
         entry_trade: TradeResult
     ) -> bool:
-        """Check risk management rules"""
-        if not entry_trade:
+        """Check risk management exit conditions (stop-loss and take-profit)"""
+        if not strategy.risk_management or not entry_trade:
             return False
         
+        entry_price = entry_trade.entry_price
+        price_change_pct = ((current_price - entry_price) / entry_price) * 100
+        
         # Stop loss check
-        if strategy.risk_management.stop_loss_pct:
-            loss_pct = ((entry_trade.entry_price - current_price) / entry_trade.entry_price) * 100
-            if loss_pct >= strategy.risk_management.stop_loss_pct:
-                return True
+        if (strategy.risk_management.stop_loss_pct > 0 and 
+            price_change_pct <= -strategy.risk_management.stop_loss_pct):
+            return True
         
         # Take profit check
-        if strategy.risk_management.take_profit_pct:
-            profit_pct = ((current_price - entry_trade.entry_price) / entry_trade.entry_price) * 100
-            if profit_pct >= strategy.risk_management.take_profit_pct:
-                return True
+        if (strategy.risk_management.take_profit_pct > 0 and
+            price_change_pct >= strategy.risk_management.take_profit_pct):
+            return True
         
         return False
     
@@ -405,26 +360,35 @@ class BacktestEngine:
         price: float, 
         available_cash: float
     ) -> float:
-        """Calculate position size based on strategy parameters"""
-        if strategy.execution_parameters.quantity_type == "percentage":
-            percentage = strategy.execution_parameters.quantity_value / 100
-            target_value = available_cash * percentage
-            return target_value / price
-        elif strategy.execution_parameters.quantity_type == "risk_based":
-            # Risk-based position sizing (simplified)
-            risk_amount = available_cash * (strategy.execution_parameters.quantity_value / 100)
-            if strategy.risk_management.stop_loss_pct:
-                stop_distance = price * (strategy.risk_management.stop_loss_pct / 100)
-                return risk_amount / stop_distance
-            else:
-                return available_cash * 0.1 / price  # Default 10%
-        else:
+        """Calculate position size based on sizing method"""
+        risk_params = strategy.risk_management
+        
+        if not risk_params or not risk_params.position_sizing_method:
+            # Default: Full cash allocation
+            return available_cash / price
+        
+        method = risk_params.position_sizing_method
+        
+        if method == "percentage":
+            # Percentage of available cash
+            pct = risk_params.position_sizing_value / 100
+            return (available_cash * pct) / price
+        elif method == "fixed_amount":
+            # Fixed cash amount
+            return min(risk_params.position_sizing_value, available_cash) / price
+        elif method == "fixed_quantity":
             # Fixed quantity
-            return strategy.execution_parameters.quantity_value
+            quantity = risk_params.position_sizing_value
+            if quantity * price > available_cash:
+                return available_cash / price
+            return quantity
+        
+        # Fallback to using all available cash
+        return available_cash / price
     
     def _calculate_fees(self, strategy: Strategy, trade_value: float) -> float:
         """Calculate trading fees"""
-        return trade_value * (strategy.execution_parameters.fees_bps / 10000)
+        return trade_value * (strategy.execution_parameters.commission_pct / 100)
     
     def _calculate_comprehensive_metrics(
         self,
@@ -434,278 +398,257 @@ class BacktestEngine:
         start_time: datetime
     ) -> BacktestResult:
         """Calculate comprehensive performance metrics"""
-        
-        execution_time = (datetime.now() - start_time).total_seconds()
+        # Convert portfolio history to DataFrame
+        portfolio_df = pd.DataFrame(portfolio.portfolio_history)
         
         # Basic metrics
-        initial_capital = portfolio.initial_capital
-        final_capital = portfolio.portfolio_value
-        total_pnl = final_capital - initial_capital
+        completed_trades = [
+            trade for trade in portfolio.trade_history 
+            if trade.exit_time is not None and trade.net_pnl is not None
+        ]
         
-        # Time period
-        start_date = market_data.index[0]
-        end_date = market_data.index[-1]
-        duration_days = (end_date - start_date).days
-        
-        # Calculate returns series
-        portfolio_df = pd.DataFrame(portfolio.portfolio_history)
-        if not portfolio_df.empty:
-            portfolio_df.set_index('timestamp', inplace=True)
-            returns = portfolio_df['portfolio_value'].pct_change().dropna()
-        else:
-            returns = pd.Series([])
-        
-        # Performance metrics
-        total_return_pct = (total_pnl / initial_capital) * 100
-        annual_return_pct = (total_return_pct / duration_days) * 365 if duration_days > 0 else 0
-        
-        # Risk metrics
-        if len(returns) > 1:
-            volatility_annual = returns.std() * np.sqrt(252) * 100
-            sharpe_ratio = (annual_return_pct / volatility_annual) if volatility_annual > 0 else 0
-            downside_returns = returns[returns < 0]
-            downside_deviation = downside_returns.std() * np.sqrt(252) * 100 if len(downside_returns) > 0 else 0
-            sortino_ratio = (annual_return_pct / downside_deviation) if downside_deviation > 0 else 0
-        else:
-            volatility_annual = 0
-            sharpe_ratio = 0
-            downside_deviation = 0
-            sortino_ratio = 0
-        
-        # Drawdown metrics
-        if not portfolio_df.empty:
-            rolling_max = portfolio_df['portfolio_value'].cummax()
-            drawdown = (portfolio_df['portfolio_value'] - rolling_max) / rolling_max * 100
-            max_drawdown_pct = drawdown.min()
-            
-            # Calculate detailed drawdown metrics
-            drawdown_metrics = self._calculate_detailed_drawdown_metrics(portfolio_df, drawdown)
-        else:
-            max_drawdown_pct = 0
-            drawdown_metrics = {
-                'max_drawdown_duration_days': 0,
-                'avg_drawdown_pct': 0,
-                'avg_drawdown_duration_days': 0,
-                'drawdown_periods': 0,
-                'time_underwater_pct': 0,
-                'max_time_to_recovery_days': 0
-            }
-        
-        calmar_ratio = (annual_return_pct / abs(max_drawdown_pct)) if max_drawdown_pct != 0 else 0
-        
-        # Trading metrics
-        completed_trades = [t for t in portfolio.trade_history if t.exit_time is not None]
-        winning_trades = [t for t in completed_trades if t.net_pnl and t.net_pnl > 0]
-        losing_trades = [t for t in completed_trades if t.net_pnl and t.net_pnl <= 0]
+        winning_trades = [t for t in completed_trades if t.net_pnl > 0]
+        losing_trades = [t for t in completed_trades if t.net_pnl <= 0]
         
         total_trades = len(completed_trades)
-        win_rate_pct = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
+        winning_count = len(winning_trades)
+        losing_count = len(losing_trades)
         
-        gross_profit = sum(t.gross_pnl for t in winning_trades if t.gross_pnl)
-        gross_loss = abs(sum(t.gross_pnl for t in losing_trades if t.gross_pnl))
-        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else 0
+        win_rate = (winning_count / total_trades) * 100 if total_trades > 0 else 0
         
-        avg_trade_return_pct = np.mean([t.return_pct for t in completed_trades if t.return_pct]) if completed_trades else 0
-        avg_win_return_pct = np.mean([t.return_pct for t in winning_trades if t.return_pct]) if winning_trades else 0
-        avg_loss_return_pct = np.mean([t.return_pct for t in losing_trades if t.return_pct]) if losing_trades else 0
+        # PnL metrics
+        total_pnl = sum(t.net_pnl for t in completed_trades) if completed_trades else 0
+        avg_profit = sum(t.net_pnl for t in winning_trades) / winning_count if winning_count > 0 else 0
+        avg_loss = sum(t.net_pnl for t in losing_trades) / losing_count if losing_count > 0 else 0
+        
+        # Profit factor
+        gross_profit = sum(t.gross_pnl for t in winning_trades) if winning_trades else 0
+        gross_loss = abs(sum(t.gross_pnl for t in losing_trades)) if losing_trades else 0
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+        
+        # Sharpe and Sortino Ratio calculations
+        if len(portfolio_df) >= 2:
+            # Calculate daily returns
+            portfolio_df['daily_return'] = portfolio_df['portfolio_value'].pct_change()
+            
+            # Annualized measures - assume 252 trading days per year
+            risk_free_rate = 0.01 / 252  # Assume 1% annual risk-free rate
+            excess_returns = portfolio_df['daily_return'].dropna() - risk_free_rate
+            
+            annualized_return = portfolio_df['daily_return'].mean() * 252
+            annualized_std_dev = portfolio_df['daily_return'].std() * (252 ** 0.5)
+            
+            # Downside returns
+            downside_returns = excess_returns[excess_returns < 0]
+            downside_std_dev = downside_returns.std() * (252 ** 0.5) if len(downside_returns) > 0 else 0.0001
+            
+            sharpe_ratio = (annualized_return - (0.01)) / annualized_std_dev if annualized_std_dev > 0 else 0
+            sortino_ratio = (annualized_return - (0.01)) / downside_std_dev if downside_std_dev > 0 else 0
+        else:
+            sharpe_ratio = 0
+            sortino_ratio = 0
+        
+        # Maximum Drawdown
+        portfolio_df['peak'] = portfolio_df['portfolio_value'].cummax()
+        portfolio_df['drawdown'] = (portfolio_df['portfolio_value'] - portfolio_df['peak']) / portfolio_df['peak'] * 100
+        
+        max_drawdown = portfolio_df['drawdown'].min()
+        
+        # Calculate drawdown metrics
+        drawdown_metrics = self._calculate_detailed_drawdown_metrics(portfolio_df, portfolio_df['drawdown'])
         
         # Calculate trade duration metrics
-        trade_duration_metrics = self._calculate_trade_duration_metrics(completed_trades, winning_trades, losing_trades)
+        duration_metrics = self._calculate_trade_duration_metrics(
+            completed_trades, winning_trades, losing_trades
+        )
         
-        # Calculate consecutive wins/losses
+        # Calculate consecutive win/loss metrics
         consecutive_metrics = self._calculate_consecutive_metrics(completed_trades)
         
-        # Create result
-        return BacktestResult(
-            backtest_id=str(uuid.uuid4()),
-            strategy_name=strategy.name,
-            symbol=strategy.asset_selection.symbol,
-            timeframe="1h",  # Default, could be parameterized
-            start_date=start_date,
-            end_date=end_date,
-            duration_days=duration_days,
-            initial_capital=initial_capital,
-            final_capital=final_capital,
-            total_pnl=total_pnl,
-            performance_metrics=PerformanceMetrics(
-                total_return_pct=total_return_pct,
-                annual_return_pct=annual_return_pct,
-                monthly_return_pct=annual_return_pct / 12,
-                daily_return_pct=annual_return_pct / 365,
-                sharpe_ratio=sharpe_ratio,
-                sortino_ratio=sortino_ratio,
-                calmar_ratio=calmar_ratio,
-                volatility_annual=volatility_annual,
-                downside_deviation=downside_deviation
-            ),
+        # Compile all metrics
+        performance_metrics = PerformanceMetrics(
+            initial_capital=portfolio.initial_capital,
+            ending_capital=portfolio.portfolio_value,
+            total_return_pct=((portfolio.portfolio_value - portfolio.initial_capital) / portfolio.initial_capital) * 100,
+            annualized_return=annualized_return * 100,
+            sharpe_ratio=sharpe_ratio,
+            sortino_ratio=sortino_ratio,
+            max_drawdown=max_drawdown,
             drawdown_metrics=DrawdownMetrics(
-                max_drawdown_pct=max_drawdown_pct,
-                max_drawdown_duration_days=drawdown_metrics['max_drawdown_duration_days'],
-                avg_drawdown_pct=drawdown_metrics['avg_drawdown_pct'],
-                avg_drawdown_duration_days=drawdown_metrics['avg_drawdown_duration_days'],
-                drawdown_periods=drawdown_metrics['drawdown_periods'],
-                recovery_factor=abs(total_return_pct / max_drawdown_pct) if max_drawdown_pct != 0 else 0,
-                time_underwater_pct=drawdown_metrics['time_underwater_pct'],
-                max_time_to_recovery_days=drawdown_metrics['max_time_to_recovery_days']
+                max_drawdown=max_drawdown,
+                max_drawdown_duration=drawdown_metrics['max_drawdown_duration'],
+                avg_drawdown=drawdown_metrics['avg_drawdown'],
+                avg_drawdown_duration=drawdown_metrics['avg_drawdown_duration'],
+                drawdown_frequency=drawdown_metrics['drawdown_frequency'],
+                recovery_factor=drawdown_metrics['recovery_factor'],
+                ulcer_index=drawdown_metrics['ulcer_index']
             ),
+            total_trades=total_trades,
+            winning_trades=winning_count,
+            losing_trades=losing_count,
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            average_profit=avg_profit,
+            average_loss=avg_loss,
+            average_profit_loss_ratio=abs(avg_profit / avg_loss) if avg_loss != 0 else float('inf'),
             trading_metrics=TradingMetrics(
-                total_trades=total_trades,
-                winning_trades=len(winning_trades),
-                losing_trades=len(losing_trades),
-                win_rate_pct=win_rate_pct,
-                profit_factor=profit_factor,
-                avg_trade_return_pct=avg_trade_return_pct,
-                avg_win_return_pct=avg_win_return_pct,
-                avg_loss_return_pct=avg_loss_return_pct,
-                avg_trade_duration_hours=trade_duration_metrics['avg_trade_duration_hours'],
-                avg_win_duration_hours=trade_duration_metrics['avg_win_duration_hours'],
-                avg_loss_duration_hours=trade_duration_metrics['avg_loss_duration_hours'],
-                best_trade_return_pct=max([t.return_pct for t in completed_trades if t.return_pct], default=0),
-                worst_trade_return_pct=min([t.return_pct for t in completed_trades if t.return_pct], default=0),
                 max_consecutive_wins=consecutive_metrics['max_consecutive_wins'],
-                max_consecutive_losses=consecutive_metrics['max_consecutive_losses']
-            ),
-            trades=portfolio.trade_history,
-            status="completed",
-            execution_time_seconds=execution_time,
-            equity_curve=[
-                {
-                    "timestamp": snapshot["timestamp"].isoformat(),
-                    "portfolio_value": snapshot["portfolio_value"],
-                    "total_return_pct": snapshot["total_return_pct"]
-                }
-                for snapshot in portfolio.portfolio_history
-            ]
+                max_consecutive_losses=consecutive_metrics['max_consecutive_losses'],
+                largest_winning_trade=consecutive_metrics['largest_winning_trade'],
+                largest_losing_trade=consecutive_metrics['largest_losing_trade'],
+                avg_winning_trade=avg_profit,
+                avg_losing_trade=avg_loss,
+                avg_trade_duration_minutes=duration_metrics['avg_duration_minutes'],
+                avg_winning_trade_duration=duration_metrics['avg_winning_duration'],
+                avg_losing_trade_duration=duration_metrics['avg_losing_duration']
+            )
         )
+        
+        # Create full backtest result
+        result = BacktestResult(
+            strategy=strategy,
+            performance=performance_metrics,
+            equity_curve=portfolio_df['portfolio_value'].tolist(),
+            drawdown=portfolio_df['drawdown'].tolist(),
+            trades=[t.dict() for t in completed_trades],
+            execution_time_sec=(datetime.now() - start_time).total_seconds(),
+            status="completed",
+            timestamp=datetime.now()
+        )
+        
+        return result
     
     def _calculate_detailed_drawdown_metrics(self, portfolio_df: pd.DataFrame, drawdown: pd.Series) -> Dict:
         """Calculate detailed drawdown metrics"""
-        # Find drawdown periods (when drawdown < 0)
-        underwater = drawdown < 0
-        
-        # Get periods where portfolio is underwater
-        underwater_periods = []
-        start_idx = None
-        
-        for i, is_underwater in enumerate(underwater):
-            if is_underwater and start_idx is None:
-                start_idx = i
-            elif not is_underwater and start_idx is not None:
-                underwater_periods.append((start_idx, i-1))
-                start_idx = None
-        
-        # Handle case where last period is underwater
-        if start_idx is not None:
-            underwater_periods.append((start_idx, len(underwater)-1))
-        
-        if not underwater_periods:
+        if drawdown.empty:
             return {
-                'max_drawdown_duration_days': 0,
-                'avg_drawdown_pct': 0,
-                'avg_drawdown_duration_days': 0,
-                'drawdown_periods': 0,
-                'time_underwater_pct': 0,
-                'max_time_to_recovery_days': 0
+                'max_drawdown': 0.0,
+                'max_drawdown_duration': 0,
+                'avg_drawdown': 0.0,
+                'avg_drawdown_duration': 0,
+                'drawdown_frequency': 0.0,
+                'recovery_factor': 0.0,
+                'ulcer_index': 0.0
             }
         
-        # Calculate metrics for each drawdown period
-        drawdown_durations = []
-        drawdown_magnitudes = []
-        recovery_times = []
+        # Max drawdown is already calculated
+        max_dd = drawdown.min()
         
-        for start, end in underwater_periods:
-            # Duration in days
-            start_time = portfolio_df.index[start]
-            end_time = portfolio_df.index[end]
-            duration_days = (end_time - start_time).days
-            drawdown_durations.append(duration_days)
-            
-            # Magnitude (minimum drawdown in this period)
-            period_drawdown = drawdown.iloc[start:end+1]
-            drawdown_magnitudes.append(period_drawdown.min())
-            
-            # Recovery time (simplified - time from end of drawdown to next high)
-            if end < len(portfolio_df) - 1:
-                recovery_start = end
-                portfolio_values = portfolio_df['portfolio_value'].iloc[recovery_start:]
-                peak_value = portfolio_df['portfolio_value'].iloc[start-1] if start > 0 else portfolio_df['portfolio_value'].iloc[0]
+        # Calculate drawdown durations
+        in_drawdown = drawdown < 0
+        
+        # Find drawdown periods
+        drawdown_starts = ((in_drawdown) & (~in_drawdown.shift(1).fillna(False))).to_numpy().nonzero()[0]
+        drawdown_ends = ((~in_drawdown) & (in_drawdown.shift(1).fillna(False))).to_numpy().nonzero()[0]
+        
+        # Handle case where we start in drawdown
+        if in_drawdown.iloc[0]:
+            drawdown_starts = np.insert(drawdown_starts, 0, 0)
+        
+        # Handle case where we end in drawdown
+        if in_drawdown.iloc[-1]:
+            drawdown_ends = np.append(drawdown_ends, len(drawdown) - 1)
+        
+        drawdown_periods = []
+        
+        for i in range(min(len(drawdown_starts), len(drawdown_ends))):
+            if drawdown_starts[i] < drawdown_ends[i]:  # Valid drawdown period
+                period_drawdown = drawdown.iloc[drawdown_starts[i]:drawdown_ends[i]+1]
+                max_period_dd = period_drawdown.min()
+                duration = drawdown_ends[i] - drawdown_starts[i] + 1
                 
-                recovery_idx = None
-                for j, value in enumerate(portfolio_values):
-                    if value >= peak_value:
-                        recovery_idx = j
-                        break
-                
-                if recovery_idx is not None:
-                    recovery_time = portfolio_df.index[recovery_start + recovery_idx]
-                    recovery_duration = (recovery_time - end_time).days
-                    recovery_times.append(recovery_duration)
+                drawdown_periods.append({
+                    'start': drawdown_starts[i],
+                    'end': drawdown_ends[i],
+                    'max_drawdown': max_period_dd,
+                    'duration': duration
+                })
         
-        # Calculate summary statistics
-        max_drawdown_duration_days = max(drawdown_durations) if drawdown_durations else 0
-        avg_drawdown_duration_days = np.mean(drawdown_durations) if drawdown_durations else 0
-        avg_drawdown_pct = np.mean(drawdown_magnitudes) if drawdown_magnitudes else 0
+        # Calculate metrics
+        if drawdown_periods:
+            max_dd_duration = max(period['duration'] for period in drawdown_periods)
+            avg_dd = sum(period['max_drawdown'] for period in drawdown_periods) / len(drawdown_periods)
+            avg_duration = sum(period['duration'] for period in drawdown_periods) / len(drawdown_periods)
+            dd_frequency = len(drawdown_periods) / len(portfolio_df) * 100
+        else:
+            max_dd_duration = 0
+            avg_dd = 0.0
+            avg_duration = 0
+            dd_frequency = 0.0
         
-        # Time underwater percentage
-        total_underwater_periods = sum(drawdown_durations)
-        total_periods = len(portfolio_df)
-        time_underwater_pct = (total_underwater_periods / total_periods * 100) if total_periods > 0 else 0
+        # Recovery factor = total return / max drawdown
+        total_return = (portfolio_df['portfolio_value'].iloc[-1] - portfolio_df['portfolio_value'].iloc[0]) / portfolio_df['portfolio_value'].iloc[0]
+        recovery_factor = abs(total_return / (max_dd / 100)) if max_dd != 0 else float('inf')
         
-        # Max time to recovery
-        max_time_to_recovery_days = max(recovery_times) if recovery_times else 0
+        # Ulcer Index (square root of the mean of squared drawdowns)
+        squared_dd = np.square(drawdown / 100)  # Convert percentage to decimal
+        ulcer_index = np.sqrt(squared_dd.mean()) * 100  # Convert back to percentage
         
         return {
-            'max_drawdown_duration_days': max_drawdown_duration_days,
-            'avg_drawdown_pct': avg_drawdown_pct,
-            'avg_drawdown_duration_days': avg_drawdown_duration_days,
-            'drawdown_periods': len(underwater_periods),
-            'time_underwater_pct': time_underwater_pct,
-            'max_time_to_recovery_days': max_time_to_recovery_days
+            'max_drawdown': max_dd,
+            'max_drawdown_duration': max_dd_duration,
+            'avg_drawdown': avg_dd,
+            'avg_drawdown_duration': avg_duration,
+            'drawdown_frequency': dd_frequency,
+            'recovery_factor': recovery_factor,
+            'ulcer_index': ulcer_index
         }
     
     def _calculate_trade_duration_metrics(self, completed_trades: list, winning_trades: list, losing_trades: list) -> Dict:
         """Calculate trade duration metrics"""
         def get_duration_hours(trades):
-            durations = []
-            for trade in trades:
-                if trade.duration_minutes is not None:
-                    durations.append(trade.duration_minutes / 60.0)  # Convert to hours
-            return durations
+            if not trades:
+                return 0
+            durations = [t.duration_minutes for t in trades if t.duration_minutes is not None]
+            return sum(durations) / (len(durations) * 60) if durations else 0
         
-        all_durations = get_duration_hours(completed_trades)
-        win_durations = get_duration_hours(winning_trades)
-        loss_durations = get_duration_hours(losing_trades)
+        all_durations = [t.duration_minutes for t in completed_trades if t.duration_minutes is not None]
+        winning_durations = [t.duration_minutes for t in winning_trades if t.duration_minutes is not None]
+        losing_durations = [t.duration_minutes for t in losing_trades if t.duration_minutes is not None]
         
         return {
-            'avg_trade_duration_hours': np.mean(all_durations) if all_durations else 0,
-            'avg_win_duration_hours': np.mean(win_durations) if win_durations else 0,
-            'avg_loss_duration_hours': np.mean(loss_durations) if loss_durations else 0
+            'avg_duration_minutes': sum(all_durations) / len(all_durations) if all_durations else 0,
+            'avg_winning_duration': sum(winning_durations) / len(winning_durations) if winning_durations else 0,
+            'avg_losing_duration': sum(losing_durations) / len(losing_durations) if losing_durations else 0,
+            'avg_duration_hours': get_duration_hours(completed_trades),
+            'avg_winning_duration_hours': get_duration_hours(winning_trades),
+            'avg_losing_duration_hours': get_duration_hours(losing_trades)
         }
     
     def _calculate_consecutive_metrics(self, completed_trades: list) -> Dict:
-        """Calculate consecutive wins and losses"""
+        """Calculate consecutive win/loss metrics"""
         if not completed_trades:
-            return {'max_consecutive_wins': 0, 'max_consecutive_losses': 0}
+            return {
+                'max_consecutive_wins': 0,
+                'max_consecutive_losses': 0,
+                'largest_winning_trade': 0,
+                'largest_losing_trade': 0
+            }
         
-        # Sort trades by entry time to ensure chronological order
-        sorted_trades = sorted(completed_trades, key=lambda t: t.entry_time)
+        # Set initial values
+        consec_wins = 0
+        consec_losses = 0
+        max_consec_wins = 0
+        max_consec_losses = 0
+        largest_win = 0
+        largest_loss = 0
         
-        max_consecutive_wins = 0
-        max_consecutive_losses = 0
-        current_consecutive_wins = 0
-        current_consecutive_losses = 0
-        
-        for trade in sorted_trades:
-            if trade.net_pnl and trade.net_pnl > 0:  # Winning trade
-                current_consecutive_wins += 1
-                current_consecutive_losses = 0
-                max_consecutive_wins = max(max_consecutive_wins, current_consecutive_wins)
-            elif trade.net_pnl and trade.net_pnl <= 0:  # Losing trade
-                current_consecutive_losses += 1
-                current_consecutive_wins = 0
-                max_consecutive_losses = max(max_consecutive_losses, current_consecutive_losses)
+        for trade in completed_trades:
+            # Update consecutive counters
+            if trade.net_pnl > 0:
+                consec_wins += 1
+                consec_losses = 0
+                max_consec_wins = max(max_consec_wins, consec_wins)
+                largest_win = max(largest_win, trade.net_pnl)
+            else:
+                consec_losses += 1
+                consec_wins = 0
+                max_consec_losses = max(max_consec_losses, consec_losses)
+                largest_loss = min(largest_loss, trade.net_pnl)
         
         return {
-            'max_consecutive_wins': max_consecutive_wins,
-            'max_consecutive_losses': max_consecutive_losses
+            'max_consecutive_wins': max_consec_wins,
+            'max_consecutive_losses': max_consec_losses,
+            'largest_winning_trade': largest_win,
+            'largest_losing_trade': abs(largest_loss)
         } 
