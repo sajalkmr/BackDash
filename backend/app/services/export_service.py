@@ -47,7 +47,11 @@ class EnhancedExportService:
         analytics: CompleteAnalytics,
         backtest_result: BacktestResult,
         export_format: str,
-        include_charts: bool = True
+        include_charts: bool = True,
+        include_trade_details: bool = True,
+        include_daily_data: bool = True,
+        include_rolling_metrics: bool = True,
+        include_benchmark_comparison: bool = True
     ) -> ExportData:
         """Export analytics data in specified format"""
         
@@ -78,6 +82,9 @@ class EnhancedExportService:
             export_data.export_content = await self._export_excel(analytics, backtest_result)
         elif export_format == 'PDF' and PDF_AVAILABLE:
             export_data.export_content = await self._export_pdf(analytics, backtest_result, include_charts)
+        else:
+            # Fallback to JSON if format not supported
+            export_data.export_content = await self._export_json(analytics, backtest_result)
         
         return export_data
     

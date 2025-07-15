@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
-  Trophy, TrendingUp, Shield, BarChart3, Target, 
-  Users, Zap, AlertTriangle, Download, RefreshCw
-} from 'lucide-react';
-import { 
-  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, 
-  Tooltip, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, 
-  Radar, BarChart, Bar
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ScatterChart, Scatter, LineChart, Line, Cell, PieChart, Pie
 } from 'recharts';
+import { 
+  TrendingUp, TrendingDown, Award, AlertTriangle, 
+  Target, Shield, Zap, Activity, Users, Crown
+} from 'lucide-react';
 
 interface StrategyComparison {
   strategy_id: string;
@@ -22,13 +21,13 @@ interface StrategyComparison {
   sharpe_ratio: number;
   max_drawdown: number;
   volatility: number;
-  rank_return: number;
-  rank_sharpe: number;
-  rank_drawdown: number;
   sortino_ratio: number;
   calmar_ratio: number;
   total_trades: number;
   win_rate: number;
+  rank_return: number;
+  rank_sharpe: number;
+  rank_drawdown: number;
 }
 
 interface MultiStrategyAnalysis {
@@ -48,29 +47,28 @@ interface MultiStrategyAnalysis {
 }
 
 interface MultiStrategyComparisonProps {
-  availableStrategies: Array<{
-    id: string;
-    name: string;
-    status: 'completed' | 'running' | 'failed';
-  }>;
+  backtestIds: string[];
   className?: string;
 }
 
 export const MultiStrategyComparison: React.FC<MultiStrategyComparisonProps> = ({
-  availableStrategies,
+  backtestIds,
   className = ""
 }) => {
-  const [selectedStrategies, setSelectedStrategies] = useState<string[]>([]);
   const [analysis, setAnalysis] = useState<MultiStrategyAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [selectedMetric, setSelectedMetric] = useState<'return' | 'sharpe' | 'drawdown'>('return');
 
-  const completedStrategies = availableStrategies.filter(s => s.status === 'completed');
+  useEffect(() => {
+    if (backtestIds.length >= 2) {
+      loadMultiStrategyAnalysis();
+    }
+  }, [backtestIds]);
 
-  const runComparison = async () => {
-    if (selectedStrategies.length < 2) {
-      setError('Please select at least 2 strategies for comparison');
+  const loadMultiStrategyAnalysis = async () => {
+    if (backtestIds.length < 2) {
+      setError('At least 2 strategies required for comparison');
       return;
     }
 
@@ -82,468 +80,417 @@ export const MultiStrategyComparison: React.FC<MultiStrategyComparisonProps> = (
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          backtest_ids: selectedStrategies,
-          comparison_type: 'multi_strategy',
-          include_rolling_metrics: true
+          backtest_ids: backtestIds,
+          comparison_type: 'multi_strategy'
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to compare strategies: ${response.statusText}`);
+        throw new Error(`Failed to load comparison: ${response.statusText}`);
       }
 
       const data = await response.json();
       setAnalysis(data);
-      setActiveTab('overview');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to compare strategies');
+      setError(err instanceof Error ? err.message : 'Failed to load comparison');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleStrategy = (strategyId: string) => {
-    setSelectedStrategies(prev =>
-      prev.includes(strategyId)
-        ? prev.filter(id => id !== strategyId)
-        : [...prev, strategyId]
-    );
+  const getMetricColor = (value: number, metric: string) => {
+    if (metric === 'drawdown') {
+      return value < -10 ? 'text-red-600' : value < -5 ? 'text-yellow-600' : 'text-green-600';
+    }
+    return value > 0 ? 'text-green-600' : 'text-red-600';
   };
 
-  const formatPercentage = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-  const formatNumber = (value: number, decimals: number = 2) => value.toFixed(decimals);
-
-  const getPerformanceColor = (value: number, isInverse: boolean = false) => {
-    const positive = isInverse ? value < 0 : value > 0;
-    if (positive) return 'text-green-600';
-    if (value < 0) return 'text-red-600';
-    return 'text-gray-600';
+  const getRankBadgeColor = (rank: number, total: number) => {
+    if (rank === 1) return 'bg-yellow-500';
+    if (rank <= total * 0.3) return 'bg-green-500';
+    if (rank <= total * 0.7) return 'bg-blue-500';
+    return 'bg-gray-500';
   };
 
-  const getRankBadgeVariant = (rank: number, total: number) => {
-    if (rank === 1) return 'default';
-    if (rank <= total / 3) return 'secondary';
-    return 'outline';
-  };
+  const formatPercentage = (value: number) => `${value.toFixed(2)}%`;
+  const formatNumber = (value: number) => value.toFixed(2);
 
-  const prepareRadarData = () => {
-    if (!analysis) return [];
-    
-    return analysis.strategies.map(strategy => ({
-      strategy: strategy.strategy_name.substring(0, 10) + '...',
-      return: Math.max(0, strategy.total_return),
-      sharpe: Math.max(0, strategy.sharpe_ratio * 10), // Scale for visualization
-      drawdown: Math.max(0, 100 + strategy.max_drawdown), // Make positive for radar
-      winRate: strategy.win_rate,
-      calmar: Math.max(0, strategy.calmar_ratio * 10)
-    }));
-  };
-
-  const prepareEfficientFrontierData = () => {
-    if (!analysis) return [];
-    
-    return analysis.strategies.map(strategy => ({
-      risk: strategy.volatility,
-      return: strategy.total_return,
-      name: strategy.strategy_name,
-      sharpe: strategy.sharpe_ratio,
-      size: Math.max(50, strategy.sharpe_ratio * 100) // Bubble size based on Sharpe
-    }));
-  };
-
-  if (completedStrategies.length < 2) {
+  if (loading) {
     return (
       <Card className={className}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Multi-Strategy Comparison
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-            <p className="text-gray-600">
-              You need at least 2 completed backtests to perform strategy comparison.
-            </p>
-            <p className="text-sm text-gray-500 mt-2">
-              Run more backtests and return here to compare their performance.
-            </p>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center space-y-4">
+            <div className="text-center">
+              <Activity className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+              <p className="text-sm text-gray-600">Analyzing strategies...</p>
+              <Progress value={75} className="w-48 mt-2" />
+            </div>
           </div>
         </CardContent>
       </Card>
     );
   }
 
+  if (error) {
+    return (
+      <Card className={className}>
+        <CardContent className="p-6">
+          <div className="text-center">
+            <AlertTriangle className="h-8 w-8 text-red-600 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={loadMultiStrategyAnalysis} variant="outline">
+              Retry Analysis
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!analysis) {
+    return (
+      <Card className={className}>
+        <CardContent className="p-6">
+          <div className="text-center">
+            <Users className="h-8 w-8 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 mb-4">Select at least 2 strategies to compare</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Prepare chart data
+  const comparisonData = analysis.strategies.map(strategy => ({
+    name: strategy.strategy_name.length > 15 
+      ? strategy.strategy_name.substring(0, 15) + '...' 
+      : strategy.strategy_name,
+    fullName: strategy.strategy_name,
+    return: strategy.total_return,
+    sharpe: strategy.sharpe_ratio,
+    drawdown: Math.abs(strategy.max_drawdown),
+    volatility: strategy.volatility,
+    trades: strategy.total_trades,
+    winRate: strategy.win_rate
+  }));
+
+  const scatterData = analysis.strategies.map(strategy => ({
+    x: strategy.volatility,
+    y: strategy.total_return,
+    name: strategy.strategy_name,
+    sharpe: strategy.sharpe_ratio,
+    size: strategy.total_trades
+  }));
+
+  const correlationData = Object.entries(analysis.correlation_matrix).map(([strategy1, correlations]) =>
+    Object.entries(correlations).map(([strategy2, correlation]) => ({
+      strategy1,
+      strategy2,
+      correlation: correlation * 100
+    }))
+  ).flat();
+
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Strategy Selection */}
+      {/* Header with Champions */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Multi-Strategy Comparison
+            <Crown className="h-5 w-5 text-yellow-600" />
+            Strategy Champions
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div>
-              <h4 className="font-medium mb-3">Select Strategies to Compare:</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {completedStrategies.map(strategy => (
-                  <div key={strategy.id} className="flex items-center space-x-2 p-3 border rounded-lg">
-                    <Checkbox
-                      id={strategy.id}
-                      checked={selectedStrategies.includes(strategy.id)}
-                      onCheckedChange={() => toggleStrategy(strategy.id)}
-                    />
-                    <label htmlFor={strategy.id} className="text-sm font-medium cursor-pointer flex-1">
-                      {strategy.name}
-                    </label>
-                    <Badge variant="secondary">{strategy.status}</Badge>
-                  </div>
-                ))}
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+              <Award className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
+              <p className="text-sm text-gray-600">Best Return</p>
+              <p className="font-semibold text-yellow-700">{analysis.best_return_strategy}</p>
             </div>
-
-            <div className="flex items-center gap-4">
-              <Button 
-                onClick={runComparison}
-                disabled={selectedStrategies.length < 2 || loading}
-                className="flex items-center gap-2"
-              >
-                {loading ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                ) : (
-                  <BarChart3 className="h-4 w-4" />
-                )}
-                {loading ? 'Comparing...' : 'Compare Strategies'}
-              </Button>
-              
-              <p className="text-sm text-gray-600">
-                {selectedStrategies.length} of {completedStrategies.length} strategies selected
-              </p>
+            <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+              <Target className="h-6 w-6 text-green-600 mx-auto mb-2" />
+              <p className="text-sm text-gray-600">Best Sharpe</p>
+              <p className="font-semibold text-green-700">{analysis.best_sharpe_strategy}</p>
             </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-red-600">{error}</p>
-              </div>
-            )}
+            <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <Shield className="h-6 w-6 text-blue-600 mx-auto mb-2" />
+              <p className="text-sm text-gray-600">Lowest Drawdown</p>
+              <p className="font-semibold text-blue-700">{analysis.lowest_drawdown_strategy}</p>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Analysis Results */}
-      {analysis && (
+      {/* Main Comparison */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Strategy Comparison ({analysis.strategies.length} Strategies)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={selectedMetric} onValueChange={(value) => setSelectedMetric(value as any)}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="return">Returns</TabsTrigger>
+              <TabsTrigger value="sharpe">Risk-Adjusted</TabsTrigger>
+              <TabsTrigger value="drawdown">Risk Analysis</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="return" className="space-y-4">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={comparisonData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value: number, name: string) => [
+                        `${value.toFixed(2)}%`, 
+                        name === 'return' ? 'Total Return' : name
+                      ]}
+                      labelFormatter={(label) => comparisonData.find(d => d.name === label)?.fullName || label}
+                    />
+                    <Bar dataKey="return" fill="#3B82F6" name="Total Return (%)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="sharpe" className="space-y-4">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={comparisonData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value: number) => [value.toFixed(2), 'Sharpe Ratio']}
+                      labelFormatter={(label) => comparisonData.find(d => d.name === label)?.fullName || label}
+                    />
+                    <Bar dataKey="sharpe" fill="#10B981" name="Sharpe Ratio" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="drawdown" className="space-y-4">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={comparisonData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value: number) => [`-${value.toFixed(2)}%`, 'Max Drawdown']}
+                      labelFormatter={(label) => comparisonData.find(d => d.name === label)?.fullName || label}
+                    />
+                    <Bar dataKey="drawdown" fill="#EF4444" name="Max Drawdown (%)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {/* Risk-Return Scatter Plot */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5" />
+            Risk-Return Profile
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart data={scatterData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="x" 
+                  name="Volatility" 
+                  unit="%" 
+                  label={{ value: 'Volatility (%)', position: 'insideBottom', offset: -10 }}
+                />
+                <YAxis 
+                  dataKey="y" 
+                  name="Return" 
+                  unit="%" 
+                  label={{ value: 'Total Return (%)', angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip 
+                  formatter={(value: number, name: string) => [
+                    `${value.toFixed(2)}%`, 
+                    name === 'x' ? 'Volatility' : 'Total Return'
+                  ]}
+                  labelFormatter={(label, payload) => {
+                    if (payload && payload[0]) {
+                      const data = payload[0].payload;
+                      return `${data.name} (Sharpe: ${data.sharpe.toFixed(2)})`;
+                    }
+                    return label;
+                  }}
+                />
+                <Scatter dataKey="y" fill="#8884d8">
+                  {scatterData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.sharpe > 1 ? '#10B981' : entry.sharpe > 0.5 ? '#F59E0B' : '#EF4444'} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 flex items-center justify-center space-x-6 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <span>Excellent (Sharpe > 1.0)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+              <span>Good (Sharpe > 0.5)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              <span>Poor (Sharpe ≤ 0.5)</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detailed Comparison Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Detailed Metrics Comparison</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left p-2">Strategy</th>
+                  <th className="text-right p-2">Total Return</th>
+                  <th className="text-right p-2">CAGR</th>
+                  <th className="text-right p-2">Sharpe</th>
+                  <th className="text-right p-2">Sortino</th>
+                  <th className="text-right p-2">Max DD</th>
+                  <th className="text-right p-2">Volatility</th>
+                  <th className="text-right p-2">Trades</th>
+                  <th className="text-right p-2">Win Rate</th>
+                  <th className="text-center p-2">Ranks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analysis.strategies.map((strategy, index) => (
+                  <tr key={strategy.strategy_id} className={index % 2 === 0 ? 'bg-gray-50' : ''}>
+                    <td className="p-2 font-medium">{strategy.strategy_name}</td>
+                    <td className={`text-right p-2 ${getMetricColor(strategy.total_return, 'return')}`}>
+                      {formatPercentage(strategy.total_return)}
+                    </td>
+                    <td className={`text-right p-2 ${getMetricColor(strategy.cagr, 'return')}`}>
+                      {formatPercentage(strategy.cagr)}
+                    </td>
+                    <td className="text-right p-2">{formatNumber(strategy.sharpe_ratio)}</td>
+                    <td className="text-right p-2">{formatNumber(strategy.sortino_ratio)}</td>
+                    <td className={`text-right p-2 ${getMetricColor(strategy.max_drawdown, 'drawdown')}`}>
+                      {formatPercentage(strategy.max_drawdown)}
+                    </td>
+                    <td className="text-right p-2">{formatPercentage(strategy.volatility)}</td>
+                    <td className="text-right p-2">{strategy.total_trades}</td>
+                    <td className="text-right p-2">{formatPercentage(strategy.win_rate)}</td>
+                    <td className="text-center p-2">
+                      <div className="flex justify-center space-x-1">
+                        <Badge 
+                          className={`text-xs px-1 py-0 ${getRankBadgeColor(strategy.rank_return, analysis.strategies.length)} text-white`}
+                        >
+                          R{strategy.rank_return}
+                        </Badge>
+                        <Badge 
+                          className={`text-xs px-1 py-0 ${getRankBadgeColor(strategy.rank_sharpe, analysis.strategies.length)} text-white`}
+                        >
+                          S{strategy.rank_sharpe}
+                        </Badge>
+                        <Badge 
+                          className={`text-xs px-1 py-0 ${getRankBadgeColor(strategy.rank_drawdown, analysis.strategies.length)} text-white`}
+                        >
+                          D{strategy.rank_drawdown}
+                        </Badge>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 text-xs text-gray-600">
+            <p>Ranks: R = Return, S = Sharpe Ratio, D = Drawdown (1 = best)</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Strategy Correlation Matrix */}
+      {Object.keys(analysis.correlation_matrix).length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Trophy className="h-5 w-5" />
-                Strategy Analysis Results
-              </span>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </Button>
-                <Badge variant="outline">
-                  {new Date(analysis.generated_at).toLocaleDateString()}
-                </Badge>
-              </div>
-            </CardTitle>
+            <CardTitle>Strategy Correlation Matrix</CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="rankings">Rankings</TabsTrigger>
-                <TabsTrigger value="analysis">Analysis</TabsTrigger>
-                <TabsTrigger value="correlation">Correlation</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="overview" className="space-y-6 mt-6">
-                {/* Top Performers */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="h-5 w-5 text-green-600" />
-                      <span className="font-medium">Best Return</span>
-                    </div>
-                    <p className="text-xl font-bold text-green-600">{analysis.best_return_strategy}</p>
-                  </div>
-
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Zap className="h-5 w-5 text-blue-600" />
-                      <span className="font-medium">Best Sharpe Ratio</span>
-                    </div>
-                    <p className="text-xl font-bold text-blue-600">{analysis.best_sharpe_strategy}</p>
-                  </div>
-
-                  <div className="bg-purple-50 p-4 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Shield className="h-5 w-5 text-purple-600" />
-                      <span className="font-medium">Lowest Drawdown</span>
-                    </div>
-                    <p className="text-xl font-bold text-purple-600">{analysis.lowest_drawdown_strategy}</p>
-                  </div>
-                </div>
-
-                {/* Performance Overview Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="border border-gray-200 p-3 text-left">Strategy</th>
-                        <th className="border border-gray-200 p-3 text-right">Total Return</th>
-                        <th className="border border-gray-200 p-3 text-right">CAGR</th>
-                        <th className="border border-gray-200 p-3 text-right">Sharpe Ratio</th>
-                        <th className="border border-gray-200 p-3 text-right">Max Drawdown</th>
-                        <th className="border border-gray-200 p-3 text-right">Volatility</th>
-                        <th className="border border-gray-200 p-3 text-right">Win Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analysis.strategies.map(strategy => (
-                        <tr key={strategy.strategy_id} className="hover:bg-gray-50">
-                          <td className="border border-gray-200 p-3 font-medium">{strategy.strategy_name}</td>
-                          <td className={`border border-gray-200 p-3 text-right font-medium ${getPerformanceColor(strategy.total_return)}`}>
-                            {formatPercentage(strategy.total_return)}
-                          </td>
-                          <td className={`border border-gray-200 p-3 text-right ${getPerformanceColor(strategy.cagr)}`}>
-                            {formatPercentage(strategy.cagr)}
-                          </td>
-                          <td className={`border border-gray-200 p-3 text-right ${getPerformanceColor(strategy.sharpe_ratio)}`}>
-                            {formatNumber(strategy.sharpe_ratio)}
-                          </td>
-                          <td className={`border border-gray-200 p-3 text-right ${getPerformanceColor(strategy.max_drawdown, true)}`}>
-                            {formatPercentage(strategy.max_drawdown)}
-                          </td>
-                          <td className="border border-gray-200 p-3 text-right">
-                            {formatPercentage(strategy.volatility)}
-                          </td>
-                          <td className={`border border-gray-200 p-3 text-right ${getPerformanceColor(strategy.win_rate - 50)}`}>
-                            {formatPercentage(strategy.win_rate)}
-                          </td>
-                        </tr>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="text-left p-2">Strategy</th>
+                    {Object.keys(analysis.correlation_matrix).map(strategy => (
+                      <th key={strategy} className="text-center p-2 min-w-20">
+                        {strategy.length > 10 ? strategy.substring(0, 10) + '...' : strategy}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(analysis.correlation_matrix).map(([strategy1, correlations]) => (
+                    <tr key={strategy1}>
+                      <td className="p-2 font-medium">
+                        {strategy1.length > 15 ? strategy1.substring(0, 15) + '...' : strategy1}
+                      </td>
+                      {Object.entries(correlations).map(([strategy2, correlation]) => (
+                        <td 
+                          key={strategy2} 
+                          className={`text-center p-2 ${
+                            correlation > 0.7 ? 'bg-red-100 text-red-800' :
+                            correlation > 0.3 ? 'bg-yellow-100 text-yellow-800' :
+                            correlation < -0.3 ? 'bg-blue-100 text-blue-800' :
+                            'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {correlation.toFixed(2)}
+                        </td>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="rankings" className="space-y-6 mt-6">
-                {/* Rankings Cards */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Return Rankings */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Return Rankings</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {analysis.strategies
-                          .sort((a, b) => a.rank_return - b.rank_return)
-                          .map(strategy => (
-                            <div key={strategy.strategy_id} className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Badge variant={getRankBadgeVariant(strategy.rank_return, analysis.strategies.length)}>
-                                  #{strategy.rank_return}
-                                </Badge>
-                                <span className="text-sm">{strategy.strategy_name}</span>
-                              </div>
-                              <span className={`text-sm font-medium ${getPerformanceColor(strategy.total_return)}`}>
-                                {formatPercentage(strategy.total_return)}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Sharpe Rankings */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Sharpe Ratio Rankings</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {analysis.strategies
-                          .sort((a, b) => a.rank_sharpe - b.rank_sharpe)
-                          .map(strategy => (
-                            <div key={strategy.strategy_id} className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Badge variant={getRankBadgeVariant(strategy.rank_sharpe, analysis.strategies.length)}>
-                                  #{strategy.rank_sharpe}
-                                </Badge>
-                                <span className="text-sm">{strategy.strategy_name}</span>
-                              </div>
-                              <span className={`text-sm font-medium ${getPerformanceColor(strategy.sharpe_ratio)}`}>
-                                {formatNumber(strategy.sharpe_ratio)}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Drawdown Rankings */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Drawdown Rankings</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {analysis.strategies
-                          .sort((a, b) => a.rank_drawdown - b.rank_drawdown)
-                          .map(strategy => (
-                            <div key={strategy.strategy_id} className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Badge variant={getRankBadgeVariant(strategy.rank_drawdown, analysis.strategies.length)}>
-                                  #{strategy.rank_drawdown}
-                                </Badge>
-                                <span className="text-sm">{strategy.strategy_name}</span>
-                              </div>
-                              <span className={`text-sm font-medium ${getPerformanceColor(strategy.max_drawdown, true)}`}>
-                                {formatPercentage(strategy.max_drawdown)}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="analysis" className="space-y-6 mt-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Efficient Frontier */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Efficient Frontier</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ResponsiveContainer width="100%" height={400}>
-                        <ScatterChart data={prepareEfficientFrontierData()}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis 
-                            dataKey="risk" 
-                            type="number" 
-                            name="Volatility %" 
-                            tick={{ fontSize: 12 }}
-                          />
-                          <YAxis 
-                            dataKey="return" 
-                            type="number" 
-                            name="Return %" 
-                            tick={{ fontSize: 12 }}
-                          />
-                          <Tooltip 
-                            formatter={(value: number, name: string) => [
-                              name === 'return' ? formatPercentage(value) : formatNumber(value),
-                              name === 'return' ? 'Return' : 'Risk'
-                            ]}
-                            labelFormatter={(value) => `Strategy: ${value}`}
-                          />
-                          <Scatter 
-                            dataKey="return" 
-                            fill="#2563eb"
-                          />
-                        </ScatterChart>
-                      </ResponsiveContainer>
-                    </CardContent>
-                  </Card>
-
-                  {/* Performance Radar */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Performance Radar</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ResponsiveContainer width="100%" height={400}>
-                        <RadarChart data={prepareRadarData()}>
-                          <PolarGrid />
-                          <PolarAngleAxis dataKey="strategy" tick={{ fontSize: 10 }} />
-                          <PolarRadiusAxis 
-                            angle={0} 
-                            domain={[0, 100]} 
-                            tick={{ fontSize: 8 }}
-                          />
-                          {analysis.strategies.map((strategy, index) => (
-                            <Radar
-                              key={strategy.strategy_id}
-                              name={strategy.strategy_name}
-                              dataKey="return"
-                              stroke={`hsl(${index * (360 / analysis.strategies.length)}, 70%, 50%)`}
-                              fill={`hsl(${index * (360 / analysis.strategies.length)}, 70%, 50%)`}
-                              fillOpacity={0.1}
-                            />
-                          ))}
-                          <Legend />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="correlation" className="space-y-6 mt-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Strategy Correlation Matrix</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {Object.keys(analysis.correlation_matrix).length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full border-collapse border border-gray-200">
-                          <thead>
-                            <tr className="bg-gray-50">
-                              <th className="border border-gray-200 p-2 text-left">Strategy</th>
-                              {Object.keys(analysis.correlation_matrix).map(strategy => (
-                                <th key={strategy} className="border border-gray-200 p-2 text-center text-xs">
-                                  {strategy.substring(0, 8)}...
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(analysis.correlation_matrix).map(([strategy1, correlations]) => (
-                              <tr key={strategy1}>
-                                <td className="border border-gray-200 p-2 font-medium text-xs">
-                                  {strategy1.substring(0, 8)}...
-                                </td>
-                                {Object.entries(correlations).map(([strategy2, correlation]) => (
-                                  <td key={strategy2} className="border border-gray-200 p-2 text-center">
-                                    <span 
-                                      className={`text-xs font-medium px-2 py-1 rounded ${
-                                        Math.abs(correlation) > 0.7 ? 'bg-red-100 text-red-800' :
-                                        Math.abs(correlation) > 0.3 ? 'bg-yellow-100 text-yellow-800' :
-                                        'bg-green-100 text-green-800'
-                                      }`}
-                                    >
-                                      {formatNumber(correlation)}
-                                    </span>
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p className="text-gray-600 text-center py-8">
-                        Correlation data not available
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex items-center justify-center space-x-6 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-red-100 border border-red-300 rounded"></div>
+                <span>High Correlation (>0.7)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-yellow-100 border border-yellow-300 rounded"></div>
+                <span>Moderate (0.3-0.7)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-100 border border-green-300 rounded"></div>
+                <span>Low (-0.3-0.3)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div>
+                <span>Negative (<-0.3)</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
     </div>
   );
-}; 
+};

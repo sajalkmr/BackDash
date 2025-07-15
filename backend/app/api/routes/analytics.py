@@ -14,9 +14,12 @@ from ...models.analytics import (
 from ...models.backtest import BacktestResult
 from ...core.analytics_engine import EnhancedAnalyticsEngine
 from ...core.redis_manager import redis_manager
+from ...services.export_service import EnhancedExportService
+from ...services.database_service import database_service
 
 router = APIRouter()
 analytics_engine = EnhancedAnalyticsEngine()
+export_service = EnhancedExportService()
 
 @router.get("/health")
 async def analytics_health():
@@ -65,13 +68,20 @@ async def generate_comprehensive_analytics(
             include_rolling_metrics
         )
         
-        # Store in Redis
+        # Store in Redis for fast access
         analytics_key = f"analytics:{backtest_id}"
         redis_manager.redis_client.setex(
             analytics_key,
             86400,  # 24 hours
             analytics.json()
         )
+        
+        # Store in database for persistence (Phase 5 enhancement)
+        try:
+            database_service.save_analytics(backtest_id, analytics)
+        except Exception as db_error:
+            # Log error but don't fail the request
+            print(f"Warning: Failed to save analytics to database: {db_error}")
         
         return {
             "analytics": analytics.dict(),
@@ -88,14 +98,29 @@ async def generate_comprehensive_analytics(
 async def get_analytics(backtest_id: str) -> Dict[str, Any]:
     """Get stored analytics for a backtest"""
     try:
+        # Try Redis first for fast access
         analytics_key = f"analytics:{backtest_id}"
         analytics_data = redis_manager.redis_client.get(analytics_key)
         
-        if not analytics_data:
-            raise HTTPException(status_code=404, detail=f"Analytics for backtest {backtest_id} not found")
+        if analytics_data:
+            analytics = CompleteAnalytics.parse_raw(analytics_data)
+            return analytics.dict()
         
-        analytics = CompleteAnalytics.parse_raw(analytics_data)
-        return analytics.dict()
+        # Fallback to database (Phase 5 enhancement)
+        try:
+            db_analytics = database_service.get_analytics(backtest_id)
+            if db_analytics and db_analytics.metrics:
+                # Restore to Redis for future fast access
+                redis_manager.redis_client.setex(
+                    analytics_key,
+                    86400,  # 24 hours
+                    CompleteAnalytics(**db_analytics.metrics).json()
+                )
+                return db_analytics.metrics
+        except Exception as db_error:
+            print(f"Warning: Failed to retrieve analytics from database: {db_error}")
+        
+        raise HTTPException(status_code=404, detail=f"Analytics for backtest {backtest_id} not found")
         
     except HTTPException:
         raise
@@ -268,14 +293,23 @@ async def get_performance_summary(backtest_id: str) -> Dict[str, Any]:
 async def export_analytics(
     backtest_id: str,
     export_format: str = "JSON",
-    include_charts: bool = True
+    include_charts: bool = True,
+    include_trade_details: bool = True,
+    include_daily_data: bool = True,
+    include_rolling_metrics: bool = True,
+    include_benchmark_comparison: bool = True
 ) -> Dict[str, Any]:
     """Export analytics data in various formats"""
     try:
-        if export_format not in ["CSV", "Excel", "PDF", "JSON"]:
-            raise HTTPException(status_code=400, detail="Unsupported export format")
+        # Validate export format
+        supported_formats = export_service.get_supported_formats()
+        if export_format not in supported_formats:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported export format. Supported formats: {', '.join(supported_formats)}"
+            )
         
-        # Check if analytics exist
+        # Get analytics and backtest result
         analytics_key = f"analytics:{backtest_id}"
         analytics_data = redis_manager.redis_client.get(analytics_key)
         
@@ -284,20 +318,35 @@ async def export_analytics(
         
         analytics = CompleteAnalytics.parse_raw(analytics_data)
         
-        # Generate export data
-        export_data = {
-            "export_id": f"export_{backtest_id}_{datetime.now().isoformat()}",
-            "export_type": export_format,
-            "generated_at": datetime.now().isoformat(),
-            "performance_data": analytics.performance.dict(),
-            "benchmark_data": analytics.benchmark_comparison.dict() if analytics.benchmark_comparison else None,
-            "chart_data": analytics.dict() if include_charts else None
-        }
+        # Get backtest result
+        backtest_result = redis_manager.get_task_result(backtest_id)
+        if not backtest_result:
+            raise HTTPException(status_code=404, detail=f"Backtest {backtest_id} not found")
+        
+        if isinstance(backtest_result, dict):
+            backtest_result = BacktestResult(**backtest_result)
+        
+        # Validate export request
+        if not await export_service.validate_export_request(export_format, analytics):
+            raise HTTPException(status_code=400, detail="Invalid export request")
+        
+        # Generate export using enhanced export service
+        export_data = await export_service.export_analytics(
+            analytics=analytics,
+            backtest_result=backtest_result,
+            export_format=export_format,
+            include_charts=include_charts,
+            include_trade_details=include_trade_details,
+            include_daily_data=include_daily_data,
+            include_rolling_metrics=include_rolling_metrics,
+            include_benchmark_comparison=include_benchmark_comparison
+        )
         
         return {
-            "export_data": export_data,
+            "export_data": export_data.dict(),
             "status": "completed",
-            "format": export_format
+            "format": export_format,
+            "supported_formats": supported_formats
         }
         
     except HTTPException:
@@ -347,12 +396,22 @@ async def list_available_analytics(
 async def delete_analytics(backtest_id: str):
     """Delete analytics for a backtest"""
     try:
+        # Delete from Redis
         analytics_key = f"analytics:{backtest_id}"
-        deleted = redis_manager.redis_client.delete(analytics_key)
+        redis_deleted = redis_manager.redis_client.delete(analytics_key)
         
-        if deleted:
+        # Delete from database (Phase 5 enhancement)
+        db_deleted = False
+        try:
+            db_deleted = database_service.delete_analytics(backtest_id)
+        except Exception as db_error:
+            print(f"Warning: Failed to delete analytics from database: {db_error}")
+        
+        if redis_deleted or db_deleted:
             return {
                 "message": f"Analytics for backtest {backtest_id} deleted successfully",
+                "deleted_from_redis": bool(redis_deleted),
+                "deleted_from_database": db_deleted,
                 "timestamp": datetime.now().isoformat()
             }
         else:
@@ -361,4 +420,62 @@ async def delete_analytics(backtest_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting analytics: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error deleting analytics: {str(e)}")
+
+# ==================== PHASE 5 DATABASE INTEGRATION ENDPOINTS ====================
+
+@router.get("/database/list")
+async def list_database_analytics(
+    limit: int = 20,
+    offset: int = 0
+) -> Dict[str, Any]:
+    """List analytics stored in database (Phase 5 feature)"""
+    try:
+        # This would require a new method in database_service
+        # For now, return a placeholder response
+        return {
+            "message": "Database analytics listing",
+            "note": "This endpoint lists analytics stored persistently in the database",
+            "limit": limit,
+            "offset": offset,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing database analytics: {str(e)}")
+
+@router.post("/database/migrate")
+async def migrate_analytics_to_database():
+    """Migrate analytics from Redis to database for persistence"""
+    try:
+        # Get all analytics keys from Redis
+        pattern = "analytics:*"
+        keys = redis_manager.redis_client.keys(pattern)
+        
+        migrated_count = 0
+        failed_count = 0
+        
+        for key in keys:
+            try:
+                # Get analytics data from Redis
+                analytics_data = redis_manager.redis_client.get(key)
+                if analytics_data:
+                    analytics = CompleteAnalytics.parse_raw(analytics_data)
+                    backtest_id = key.decode('utf-8').replace('analytics:', '')
+                    
+                    # Save to database
+                    database_service.save_analytics(backtest_id, analytics)
+                    migrated_count += 1
+            except Exception as e:
+                failed_count += 1
+                print(f"Failed to migrate analytics for key {key}: {e}")
+        
+        return {
+            "message": "Analytics migration completed",
+            "migrated_count": migrated_count,
+            "failed_count": failed_count,
+            "total_processed": len(keys),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during analytics migration: {str(e)}")

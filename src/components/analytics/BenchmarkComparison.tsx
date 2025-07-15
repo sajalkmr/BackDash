@@ -4,10 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { TrendingUp, TrendingDown, BarChart3, Activity, Target, AlertTriangle } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, AreaChart, Area, ComposedChart
+} from 'recharts';
+import { 
+  TrendingUp, TrendingDown, Target, Shield, Activity, 
+  AlertTriangle, CheckCircle, Minus, ArrowUp, ArrowDown
+} from 'lucide-react';
 
-interface BenchmarkData {
+interface BenchmarkComparison {
   benchmark_symbol: string;
   benchmark_name: string;
   strategy_return: number;
@@ -38,54 +44,55 @@ interface BenchmarkComparisonProps {
   className?: string;
 }
 
+const AVAILABLE_BENCHMARKS = [
+  { value: 'BTC-USDT', label: 'Bitcoin (BTC)', description: 'Leading cryptocurrency' },
+  { value: 'ETH-USDT', label: 'Ethereum (ETH)', description: 'Smart contract platform' },
+  { value: 'BNB-USDT', label: 'Binance Coin (BNB)', description: 'Exchange token' },
+  { value: 'ADA-USDT', label: 'Cardano (ADA)', description: 'Proof-of-stake blockchain' },
+  { value: 'SOL-USDT', label: 'Solana (SOL)', description: 'High-performance blockchain' },
+  { value: 'DOT-USDT', label: 'Polkadot (DOT)', description: 'Interoperability protocol' }
+];
+
 export const BenchmarkComparison: React.FC<BenchmarkComparisonProps> = ({
   backtestId,
   className = ""
 }) => {
-  const [benchmarkData, setBenchmarkData] = useState<BenchmarkData | null>(null);
+  const [comparison, setComparison] = useState<BenchmarkComparison | null>(null);
   const [selectedBenchmark, setSelectedBenchmark] = useState('BTC-USDT');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const availableBenchmarks = [
-    { value: 'BTC-USDT', label: 'Bitcoin (BTC-USDT)' },
-    { value: 'ETH-USDT', label: 'Ethereum (ETH-USDT)' },
-    { value: 'BNB-USDT', label: 'Binance Coin (BNB-USDT)' },
-    { value: 'ADA-USDT', label: 'Cardano (ADA-USDT)' },
-    { value: 'SOL-USDT', label: 'Solana (SOL-USDT)' }
-  ];
+  useEffect(() => {
+    loadBenchmarkComparison();
+  }, [backtestId, selectedBenchmark]);
 
-  const fetchBenchmarkComparison = async (benchmarkSymbol: string) => {
+  const loadBenchmarkComparison = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const response = await fetch(
-        `/api/v1/analytics/benchmark-compare/${backtestId}?benchmark_symbol=${benchmarkSymbol}`,
-        { method: 'POST' }
-      );
-      
+      const response = await fetch(`/api/v1/analytics/benchmark-compare/${backtestId}?benchmark_symbol=${selectedBenchmark}`, {
+        method: 'POST'
+      });
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch benchmark comparison: ${response.statusText}`);
+        throw new Error(`Failed to load benchmark comparison: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      setBenchmarkData(data);
+      setComparison(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch benchmark comparison');
+      setError(err instanceof Error ? err.message : 'Failed to load benchmark comparison');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (backtestId) {
-      fetchBenchmarkComparison(selectedBenchmark);
-    }
-  }, [backtestId, selectedBenchmark]);
-
-  const formatPercentage = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-  const formatNumber = (value: number, decimals: number = 2) => value.toFixed(decimals);
+  const getPerformanceIcon = (value: number) => {
+    if (value > 0) return <ArrowUp className="h-4 w-4 text-green-600" />;
+    if (value < 0) return <ArrowDown className="h-4 w-4 text-red-600" />;
+    return <Minus className="h-4 w-4 text-gray-600" />;
+  };
 
   const getPerformanceColor = (value: number) => {
     if (value > 0) return 'text-green-600';
@@ -93,24 +100,23 @@ export const BenchmarkComparison: React.FC<BenchmarkComparisonProps> = ({
     return 'text-gray-600';
   };
 
-  const getPerformanceIcon = (value: number) => {
-    return value >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />;
+  const getBadgeVariant = (value: number, threshold: number = 0) => {
+    if (value > threshold) return 'default';
+    return 'secondary';
   };
+
+  const formatPercentage = (value: number) => `${value.toFixed(2)}%`;
+  const formatNumber = (value: number) => value.toFixed(3);
 
   if (loading) {
     return (
       <Card className={className}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            Benchmark Comparison
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center p-8">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center space-y-4">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-2 text-sm text-gray-600">Loading benchmark comparison...</p>
+              <Activity className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+              <p className="text-sm text-gray-600">Comparing with benchmark...</p>
+              <Progress value={60} className="w-48 mt-2" />
             </div>
           </div>
         </CardContent>
@@ -121,25 +127,42 @@ export const BenchmarkComparison: React.FC<BenchmarkComparisonProps> = ({
   if (error) {
     return (
       <Card className={className}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-500" />
-            Benchmark Comparison Error
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-red-600">{error}</p>
-          <Button 
-            onClick={() => fetchBenchmarkComparison(selectedBenchmark)}
-            className="mt-4"
-            variant="outline"
-          >
-            Retry
-          </Button>
+        <CardContent className="p-6">
+          <div className="text-center">
+            <AlertTriangle className="h-8 w-8 text-red-600 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={loadBenchmarkComparison} variant="outline">
+              Retry Comparison
+            </Button>
+          </div>
         </CardContent>
       </Card>
     );
   }
+
+  if (!comparison) {
+    return (
+      <Card className={className}>
+        <CardContent className="p-6">
+          <div className="text-center">
+            <Target className="h-8 w-8 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600">No benchmark comparison available</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Prepare chart data
+  const performanceData = comparison.benchmark_equity_curve.map((point, index) => {
+    const relativePoint = comparison.relative_performance[index];
+    return {
+      timestamp: new Date(point.timestamp).toLocaleDateString(),
+      strategy: point.value,
+      benchmark: 100 + point.return_pct,
+      relative: relativePoint?.relative_return || 0
+    };
+  });
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -147,207 +170,295 @@ export const BenchmarkComparison: React.FC<BenchmarkComparisonProps> = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            Benchmark Comparison
+            <Target className="h-5 w-5" />
+            Benchmark Selection
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4 mb-6">
-            <label className="text-sm font-medium">Compare against:</label>
+          <div className="flex items-center gap-4">
             <Select value={selectedBenchmark} onValueChange={setSelectedBenchmark}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-64">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {availableBenchmarks.map((benchmark) => (
+                {AVAILABLE_BENCHMARKS.map(benchmark => (
                   <SelectItem key={benchmark.value} value={benchmark.value}>
-                    {benchmark.label}
+                    <div>
+                      <p className="font-medium">{benchmark.label}</p>
+                      <p className="text-xs text-gray-600">{benchmark.description}</p>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <Button onClick={loadBenchmarkComparison} variant="outline">
+              Update Comparison
+            </Button>
           </div>
+        </CardContent>
+      </Card>
 
-          {benchmarkData && (
-            <>
-              {/* Performance Overview */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Strategy Return</p>
-                      <p className={`text-2xl font-bold ${getPerformanceColor(benchmarkData.strategy_return)}`}>
-                        {formatPercentage(benchmarkData.strategy_return)}
-                      </p>
-                    </div>
-                    {getPerformanceIcon(benchmarkData.strategy_return)}
+      {/* Performance Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Performance vs {comparison.benchmark_name}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Returns Comparison */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-700">Returns Comparison</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Strategy Return</span>
+                  <div className="flex items-center gap-2">
+                    {getPerformanceIcon(comparison.strategy_return)}
+                    <span className={`font-medium ${getPerformanceColor(comparison.strategy_return)}`}>
+                      {formatPercentage(comparison.strategy_return)}
+                    </span>
                   </div>
                 </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Benchmark Return</p>
-                      <p className={`text-2xl font-bold ${getPerformanceColor(benchmarkData.benchmark_return)}`}>
-                        {formatPercentage(benchmarkData.benchmark_return)}
-                      </p>
-                    </div>
-                    {getPerformanceIcon(benchmarkData.benchmark_return)}
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Benchmark Return</span>
+                  <div className="flex items-center gap-2">
+                    {getPerformanceIcon(comparison.benchmark_return)}
+                    <span className={`font-medium ${getPerformanceColor(comparison.benchmark_return)}`}>
+                      {formatPercentage(comparison.benchmark_return)}
+                    </span>
                   </div>
                 </div>
-
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Excess Return</p>
-                      <p className={`text-2xl font-bold ${getPerformanceColor(benchmarkData.excess_return)}`}>
-                        {formatPercentage(benchmarkData.excess_return)}
-                      </p>
-                    </div>
-                    <Target className="h-6 w-6 text-green-600" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Risk-Adjusted Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="text-center p-4 border rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">Information Ratio</p>
-                  <p className="text-xl font-semibold">{formatNumber(benchmarkData.information_ratio)}</p>
-                  <Badge variant={benchmarkData.information_ratio > 0.5 ? "default" : "secondary"} className="mt-1">
-                    {benchmarkData.information_ratio > 0.5 ? "Good" : "Poor"}
-                  </Badge>
-                </div>
-
-                <div className="text-center p-4 border rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">Tracking Error</p>
-                  <p className="text-xl font-semibold">{formatPercentage(benchmarkData.tracking_error)}</p>
-                  <Badge variant={benchmarkData.tracking_error < 10 ? "default" : "destructive"} className="mt-1">
-                    {benchmarkData.tracking_error < 10 ? "Low" : "High"}
-                  </Badge>
-                </div>
-
-                <div className="text-center p-4 border rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">Beta</p>
-                  <p className="text-xl font-semibold">{formatNumber(benchmarkData.beta)}</p>
-                  <Badge variant="outline" className="mt-1">
-                    {benchmarkData.beta > 1 ? "High Risk" : "Low Risk"}
-                  </Badge>
-                </div>
-
-                <div className="text-center p-4 border rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">Alpha</p>
-                  <p className={`text-xl font-semibold ${getPerformanceColor(benchmarkData.alpha)}`}>
-                    {formatPercentage(benchmarkData.alpha)}
-                  </p>
-                  <Badge variant={benchmarkData.alpha > 0 ? "default" : "secondary"} className="mt-1">
-                    {benchmarkData.alpha > 0 ? "Outperform" : "Underperform"}
-                  </Badge>
-                </div>
-              </div>
-
-              {/* Correlation and Drawdown */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-3">Correlation Analysis</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Correlation with {benchmarkData.benchmark_name}</span>
-                      <span className="font-medium">{formatNumber(benchmarkData.correlation)}</span>
-                    </div>
-                    <Progress value={Math.abs(benchmarkData.correlation) * 100} className="h-2" />
-                    <p className="text-xs text-gray-600">
-                      {Math.abs(benchmarkData.correlation) > 0.7 ? "High correlation" : 
-                       Math.abs(benchmarkData.correlation) > 0.3 ? "Moderate correlation" : "Low correlation"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-3">Drawdown Comparison</h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Strategy Max Drawdown</span>
-                      <span className={`font-medium ${getPerformanceColor(-benchmarkData.strategy_max_drawdown)}`}>
-                        {formatPercentage(-benchmarkData.strategy_max_drawdown)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Benchmark Max Drawdown</span>
-                      <span className={`font-medium ${getPerformanceColor(-benchmarkData.benchmark_max_drawdown)}`}>
-                        {formatPercentage(-benchmarkData.benchmark_max_drawdown)}
-                      </span>
-                    </div>
-                    <Badge variant={benchmarkData.strategy_max_drawdown < benchmarkData.benchmark_max_drawdown ? "default" : "destructive"}>
-                      {benchmarkData.strategy_max_drawdown < benchmarkData.benchmark_max_drawdown ? "Better Risk Control" : "Higher Risk"}
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <span className="text-sm font-medium">Excess Return</span>
+                  <div className="flex items-center gap-2">
+                    {getPerformanceIcon(comparison.excess_return)}
+                    <Badge variant={getBadgeVariant(comparison.excess_return)}>
+                      {formatPercentage(comparison.excess_return)}
                     </Badge>
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Performance Chart */}
-              {benchmarkData.relative_performance && benchmarkData.relative_performance.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Activity className="h-5 w-5" />
-                      Relative Performance Over Time
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={400}>
-                      <LineChart data={benchmarkData.relative_performance}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis 
-                          dataKey="timestamp" 
-                          tick={{ fontSize: 12 }}
-                          angle={-45}
-                          textAnchor="end"
-                          height={80}
-                        />
-                        <YAxis tick={{ fontSize: 12 }} />
-                        <Tooltip 
-                          formatter={(value: number, name: string) => [
-                            `${formatPercentage(value)}`,
-                            name === 'strategy_return' ? 'Strategy' : 
-                            name === 'benchmark_return' ? 'Benchmark' : 'Relative'
-                          ]}
-                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
-                        />
-                        <Legend />
-                        <Line 
-                          type="monotone" 
-                          dataKey="strategy_return" 
-                          stroke="#2563eb" 
-                          strokeWidth={2}
-                          name="Strategy Return"
-                          dot={false}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="benchmark_return" 
-                          stroke="#64748b" 
-                          strokeWidth={2}
-                          name="Benchmark Return"
-                          dot={false}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="relative_return" 
-                          stroke="#16a34a" 
-                          strokeWidth={2}
-                          name="Relative Performance"
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
+            {/* Risk-Adjusted Metrics */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-700">Risk-Adjusted Performance</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Information Ratio</span>
+                  <Badge variant={getBadgeVariant(comparison.information_ratio, 0.5)}>
+                    {formatNumber(comparison.information_ratio)}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Tracking Error</span>
+                  <span className="font-medium">{formatPercentage(comparison.tracking_error)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Correlation</span>
+                  <Badge variant={comparison.correlation > 0.7 ? 'secondary' : 'default'}>
+                    {formatNumber(comparison.correlation)}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Beta</span>
+                  <span className="font-medium">{formatNumber(comparison.beta)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Alpha</span>
+                  <div className="flex items-center gap-2">
+                    {getPerformanceIcon(comparison.alpha)}
+                    <span className={`font-medium ${getPerformanceColor(comparison.alpha)}`}>
+                      {formatPercentage(comparison.alpha)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Risk Comparison */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-700">Risk Comparison</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Strategy Max DD</span>
+                  <span className="font-medium text-red-600">
+                    {formatPercentage(comparison.strategy_max_drawdown)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Benchmark Max DD</span>
+                  <span className="font-medium text-red-600">
+                    {formatPercentage(comparison.benchmark_max_drawdown)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <span className="text-sm font-medium">DD Difference</span>
+                  <div className="flex items-center gap-2">
+                    {comparison.strategy_max_drawdown < comparison.benchmark_max_drawdown ? (
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                    )}
+                    <Badge variant={
+                      comparison.strategy_max_drawdown < comparison.benchmark_max_drawdown ? 'default' : 'secondary'
+                    }>
+                      {formatPercentage(comparison.strategy_max_drawdown - comparison.benchmark_max_drawdown)}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Performance Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Cumulative Performance Comparison</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={performanceData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="timestamp" />
+                <YAxis />
+                <Tooltip 
+                  formatter={(value: number, name: string) => [
+                    `${value.toFixed(2)}${name === 'relative' ? '%' : ''}`, 
+                    name === 'strategy' ? 'Strategy' : 
+                    name === 'benchmark' ? comparison.benchmark_name : 
+                    'Relative Performance'
+                  ]}
+                />
+                <Legend />
+                <Line 
+                  type="monotone" 
+                  dataKey="strategy" 
+                  stroke="#3B82F6" 
+                  strokeWidth={2}
+                  name="Strategy"
+                  dot={false}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="benchmark" 
+                  stroke="#10B981" 
+                  strokeWidth={2}
+                  name={comparison.benchmark_name}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Relative Performance */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Relative Performance (Strategy vs Benchmark)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={performanceData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="timestamp" />
+                <YAxis />
+                <Tooltip 
+                  formatter={(value: number) => [`${value.toFixed(2)}%`, 'Relative Performance']}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="relative" 
+                  stroke="#8884d8" 
+                  fill="#8884d8" 
+                  fillOpacity={0.3}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 text-sm text-gray-600">
+            <p>Positive values indicate strategy outperformance, negative values indicate underperformance.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Key Insights */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Key Insights
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <h4 className="font-medium">Performance Analysis</h4>
+              <div className="space-y-2 text-sm">
+                {comparison.excess_return > 0 ? (
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Strategy outperformed benchmark by {formatPercentage(comparison.excess_return)}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-red-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>Strategy underperformed benchmark by {formatPercentage(Math.abs(comparison.excess_return))}</span>
+                  </div>
+                )}
+                
+                {comparison.information_ratio > 0.5 ? (
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Good risk-adjusted performance (IR: {formatNumber(comparison.information_ratio)})</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-yellow-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>Moderate risk-adjusted performance (IR: {formatNumber(comparison.information_ratio)})</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium">Risk Analysis</h4>
+              <div className="space-y-2 text-sm">
+                {comparison.strategy_max_drawdown < comparison.benchmark_max_drawdown ? (
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Lower maximum drawdown than benchmark</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-red-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>Higher maximum drawdown than benchmark</span>
+                  </div>
+                )}
+                
+                {comparison.correlation < 0.8 ? (
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Good diversification benefit (correlation: {formatNumber(comparison.correlation)})</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-yellow-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>High correlation with benchmark ({formatNumber(comparison.correlation)})</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
   );
-}; 
+};

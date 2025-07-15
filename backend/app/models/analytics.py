@@ -195,6 +195,9 @@ class ExportData(BaseModel):
     # Metadata
     strategy_config: Dict[str, Any] = Field(default={}, description="Strategy configuration")
     backtest_params: Dict[str, Any] = Field(default={}, description="Backtest parameters")
+    
+    # Export content (base64 encoded for binary formats)
+    export_content: Optional[str] = Field(default=None, description="Exported content")
 
 class CompleteAnalytics(BaseModel):
     """Complete analytics package"""
